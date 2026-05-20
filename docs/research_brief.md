@@ -28,7 +28,7 @@
 | **Turn rate** | Dynamic — smaller snakes turn sharply, larger snakes turn wide |
 | **Body following** | Trail-following algorithm: head records positions into a history buffer; each body segment is placed at fixed intervals along the trail. No physics simulation. |
 
-**Key formulas (from reverse-engineered source):**
+**Approximate formulas (based on public references and open-source clone behavior):**
 
 ```
 // Snake thickness (scale), capped at 6
@@ -119,7 +119,7 @@ fsp = ssp + 0.1            // final speed per frame
 | Property | Value |
 |----------|-------|
 | **Shape** | Circular disc |
-| **Radius** | ~21,600 game units (live servers), 16,384 default |
+| **Radius** | ~16,000–21,000 game units (approximate, based on community observations) |
 | **Coordinate system** | X/Y centered at origin (0, 0) |
 | **Boundary** | Instant-death wall, no wrapping |
 | **Spatial partitioning** | Sectors of ~300–480 units; client processes ~144 sectors along each edge |
@@ -162,7 +162,7 @@ fsp = ssp + 0.1            // final speed per frame
 |---------|----------|-----------|
 | **[knagaitsev/slither.io-clone](https://github.com/knagaitsev/slither.io-clone)** | JS / Phaser | Best client-side mechanics reference (~263 stars) |
 | **[iiegor/slither](https://github.com/iiegor/slither)** | Node.js | Server architecture understanding |
-| **[ClitherProject/Slither.io-Protocol](https://github.com/ClitherProject/Slither.io-Protocol)** | Documentation | Definitive protocol reverse-engineering reference |
+| **[ClitherProject/Slither.io-Protocol](https://github.com/ClitherProject/Slither.io-Protocol)** | Documentation | Community-maintained protocol documentation |
 | **[moddio/moddio2](https://github.com/moddio/moddio2)** | JS / HTML5 | Full multiplayer engine with built-in A* AI |
 | **[simondiep/node-multiplayer-snake](https://github.com/simondiep/node-multiplayer-snake)** | Node.js / Socket.io | Feature-rich snake implementation |
 
@@ -332,8 +332,8 @@ The local sandbox must faithfully model these mechanics:
 
 | Mechanic | Priority | Fidelity Needed |
 |----------|----------|-----------------|
-| Continuous snake movement | P0 | High — must match real steering/speed model |
-| Turn rate scaling with size | P0 | High — use the real formulas |
+| Continuous snake movement | P0 | High — must model Slither-like steering/speed |
+| Turn rate scaling with size | P0 | High — use approximate Slither-like formulas |
 | Food spawning (natural + death) | P0 | Medium — simplified types okay |
 | Growth (eating → longer) | P0 | Medium — linear approximation okay initially |
 | Boost (speed up, lose mass, drop food) | P0 | High — core strategic mechanic |
@@ -353,7 +353,7 @@ slither.io/
 │   └── research_brief.md          ← This document
 ├── sandbox/
 │   ├── main.py                    # Entry point, game loop
-│   ├── config.py                  # All tunable constants (from real game formulas)
+│   ├── config.py                  # All tunable constants (Slither-like approximations)
 │   ├── world.py                   # Game world: manages entities, spatial grid, boundaries
 │   ├── snake.py                   # Snake entity: movement, growth, boost, death
 │   ├── food.py                    # Food entity: spawning, types, collection
@@ -434,7 +434,7 @@ These are the open questions and design decisions that ChatGPT should address in
 - Should we track per-strategy performance separately?
 
 ### 5.6 Sandbox Fidelity
-- Use the exact real-game formulas from Section 1, or simplified approximations?
+- Use the approximate Slither-like formulas from Section 1, or further simplified versions?
 - How many AI opponents in the sandbox? (real game has hundreds, but we need reasonable perf)
 - Fixed or randomized food spawn patterns?
 
@@ -445,11 +445,13 @@ These are the open questions and design decisions that ChatGPT should address in
 
 ---
 
-## Appendix: Server Constants Reference
+## Appendix: Approximate Game Constants Reference
+
+> These values are approximate, derived from public community analysis, open-source clones, and observed gameplay behavior. They are not coupled to live Slither.io internals.
 
 | Constant | Description | Default Value |
 |----------|-------------|---------------|
-| `gameRadius` | Arena radius | 16,384 (live: ~21,600) |
+| `gameRadius` | Arena radius | ~16,000–21,000 (approximate) |
 | `mscps` | Max segments | Server-configured |
 | `sector_size` | Spatial cell size | ~300–480 |
 | `spangdv` | Angular speed divisor | 4.8 |
