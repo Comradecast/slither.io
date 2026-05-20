@@ -4,6 +4,9 @@ import math
 from sandbox.config import Config
 from sandbox.world import World
 from sandbox.renderer import Renderer
+from sandbox.logging_.game_logger import GameLogger
+
+ENABLE_LOGGING = False
 
 def main():
     pygame.init()
@@ -11,14 +14,15 @@ def main():
     pygame.display.set_caption("Slither Sandbox")
     clock = pygame.time.Clock()
 
-    world = World()
+    logger = GameLogger("logs/decisions.jsonl") if ENABLE_LOGGING else None
+    world = World(logger=logger)
     renderer = Renderer(screen)
 
     # Spawn player
     player = world.spawn_snake(0, 0, 0)
     
     # Spawn dummy AI
-    world.spawn_snake(1, 200, 200, is_bot=True)
+    world.spawn_snake(1, 200, 200, is_bot=True, track_metrics=True)
 
     running = True
     while running:
