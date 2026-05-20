@@ -21,6 +21,11 @@ class GameLogger:
                      nearest_threat_score: float | None = None,
                      nearest_threat_position_x: float | None = None,
                      nearest_threat_position_y: float | None = None,
+                     highest_threat_score: float | None = None,
+                     highest_threat_distance: float | None = None,
+                     highest_threat_angle: float | None = None,
+                     highest_threat_in_forward_cone: bool | None = None,
+                     defensive_reason: str | None = None,
                      active_threat_count: int = 0):
         """Write a single decision record."""
         if not self.output_path:
@@ -41,6 +46,11 @@ class GameLogger:
             "nearest_threat_distance": round(nearest_threat_distance, 2) if nearest_threat_distance is not None else None,
             "nearest_threat_score": round(nearest_threat_score, 2) if nearest_threat_score is not None else None,
             "nearest_threat_position": {"x": round(nearest_threat_position_x, 2), "y": round(nearest_threat_position_y, 2)} if nearest_threat_position_x is not None and nearest_threat_position_y is not None else None,
+            "highest_threat_score": round(highest_threat_score, 2) if highest_threat_score is not None else None,
+            "highest_threat_distance": round(highest_threat_distance, 2) if highest_threat_distance is not None else None,
+            "highest_threat_angle": round(highest_threat_angle, 4) if highest_threat_angle is not None else None,
+            "highest_threat_in_forward_cone": highest_threat_in_forward_cone,
+            "defensive_reason": defensive_reason,
             "active_threat_count": active_threat_count
         }
 

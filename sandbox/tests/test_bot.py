@@ -44,6 +44,39 @@ def test_perception_detects_enemy_threats_not_own_body():
     assert state.nearest_threat.source_id == 2
     assert state.nearest_threat.distance == 50
 
+def test_perception_forward_threats_score_higher():
+    # My snake faces right (0 radians)
+    my_snake = Snake(1, 0, 0, 0)
+    
+    # Threat 1 is directly in front, distance 50
+    enemy1 = Snake(2, 50, 0, 0)
+    enemy1.segments = [Vector2(50, 0)]
+    
+    # Threat 2 is directly behind, distance 50
+    enemy2 = Snake(3, -50, 0, 0)
+    enemy2.segments = [Vector2(-50, 0)]
+    
+    p = Perception(vision_radius=100)
+    state = p.build(my_snake, [my_snake, enemy1, enemy2], [])
+    
+    assert state.active_threat_count == 2
+    assert state.highest_threat.pos.x == 50
+    assert state.highest_threat.in_forward_cone == True
+
+def test_perception_closer_threats_score_higher():
+    my_snake = Snake(1, 0, 0, 0)
+    
+    # Both in front, different distances
+    enemy1 = Snake(2, 50, 0, 0)
+    enemy1.segments = [Vector2(50, 0)]
+    enemy2 = Snake(3, 80, 0, 0)
+    enemy2.segments = [Vector2(80, 0)]
+    
+    p = Perception(vision_radius=100)
+    state = p.build(my_snake, [my_snake, enemy1, enemy2], [])
+    
+    assert state.highest_threat.pos.x == 50 # 50 is closer than 80
+
 def test_strategy_boundary_avoidance_priority():
     # Near edge, but also near an enemy
     s = Snake(1, Config.WORLD_RADIUS - 10, 0, 0)
@@ -57,6 +90,7 @@ def test_strategy_boundary_avoidance_priority():
     
     # Boundary avoidance must take priority over threat avoidance
     assert result.mode == StrategyMode.AVOID_BOUNDARY
+    assert result.defensive_reason == "Boundary proximity"
 
 def test_strategy_threat_avoidance():
     # Safe from boundary, but near enemy
@@ -71,6 +105,7 @@ def test_strategy_threat_avoidance():
     result = strat.decide(state)
     assert result.mode == StrategyMode.AVOID_THREAT
     assert result.target_pos.x == 50
+    assert result.defensive_reason == "Forward danger"
 
 def test_strategy_food_seeking_when_safe():
     s = Snake(1, 0, 0, 0)
@@ -112,8 +147,9 @@ def test_steering_valid_heading_avoid_threat():
     steer = Steering()
     steer_result = steer.compute(strat_result, state)
     
-    # We want to steer AWAY from the enemy, so we should head left (pi radians)
-    assert steer_result.heading == pytest.approx(math.pi)
+    # We want to steer perpendicular to the enemy, so we should head left/right
+    # In this case angle_diff is 0, so it steers left (my_angle - pi/2 = -pi/2)
+    assert steer_result.heading == pytest.approx(-math.pi / 2)
 
 def test_controller_returns_action_no_boost():
     s = Snake(1, 0, 0, 0)

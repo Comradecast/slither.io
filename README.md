@@ -24,7 +24,7 @@ pip install -r requirements.txt
 ```bash
 python -m sandbox.main
 ```
-*Note: Phase 5 implements Threat Awareness v1. The dummy AI spawned in `main.py` is now driven by this pipeline (avoiding boundaries, avoiding nearby enemy segments, and seeking food).*
+*Note: Phase 6 implements Defensive Behavior Tuning. The bot now uses forward-cone detection and smooth perpendicular steering to avoid enemy bodies while navigating.*
 
 ## Running Tests
 

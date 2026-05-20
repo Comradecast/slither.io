@@ -16,6 +16,9 @@ def test_logger_writes_one_record():
             nearest_food_distance=90.0, boundary_distance=2800.0,
             nearest_threat_distance=50.0, nearest_threat_score=150.0,
             nearest_threat_position_x=60.0, nearest_threat_position_y=20.0,
+            highest_threat_score=150.0, highest_threat_distance=50.0,
+            highest_threat_angle=0.5, highest_threat_in_forward_cone=True,
+            defensive_reason="Forward danger",
             active_threat_count=1
         )
         
@@ -29,6 +32,9 @@ def test_logger_writes_one_record():
             assert record["strategy_mode"] == "SEEK_FOOD"
             assert record["position"]["x"] == 10.0
             assert record["nearest_threat_distance"] == 50.0
+            assert record["highest_threat_score"] == 150.0
+            assert record["highest_threat_in_forward_cone"] == True
+            assert record["defensive_reason"] == "Forward danger"
             assert record["active_threat_count"] == 1
 
 def test_logger_appends_multiple_records():

@@ -15,6 +15,7 @@ class StrategyMode(Enum):
 class StrategyResult:
     mode: StrategyMode
     target_pos: Vector2 | None = None
+    defensive_reason: str | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -22,12 +23,13 @@ class Strategy:
     def decide(self, perception: PerceptionState) -> StrategyResult:
         # 1. Boundary avoidance is highest priority
         if perception.boundary_distance < Config.BASE_RADIUS * 10:
-            return StrategyResult(mode=StrategyMode.AVOID_BOUNDARY, target_pos=Vector2(0, 0))
+            return StrategyResult(mode=StrategyMode.AVOID_BOUNDARY, target_pos=Vector2(0, 0), defensive_reason="Boundary proximity")
             
-        # 2. Threat avoidance
-        if perception.nearest_threat is not None:
+        # 2. Threat avoidance (using highest scored threat)
+        if perception.highest_threat is not None:
             # target_pos is the threat we want to avoid
-            return StrategyResult(mode=StrategyMode.AVOID_THREAT, target_pos=perception.nearest_threat.pos)
+            reason = "Forward danger" if perception.highest_threat.in_forward_cone else "Nearby body segment"
+            return StrategyResult(mode=StrategyMode.AVOID_THREAT, target_pos=perception.highest_threat.pos, defensive_reason=reason)
             
         # 3. Seek food if safe
         if perception.visible_food:

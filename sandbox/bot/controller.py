@@ -52,6 +52,16 @@ class BotController:
                 t_pos_x = perception_state.nearest_threat.pos.x
                 t_pos_y = perception_state.nearest_threat.pos.y
                 
+            h_score = None
+            h_dist = None
+            h_angle = None
+            h_cone = None
+            if perception_state.highest_threat:
+                h_score = perception_state.highest_threat.score
+                h_dist = perception_state.highest_threat.distance
+                h_angle = perception_state.highest_threat.angle_diff
+                h_cone = perception_state.highest_threat.in_forward_cone
+                
             self.logger.log_decision(
                 tick=tick,
                 snake_id=self.snake.id,
@@ -70,6 +80,11 @@ class BotController:
                 nearest_threat_score=t_score,
                 nearest_threat_position_x=t_pos_x,
                 nearest_threat_position_y=t_pos_y,
+                highest_threat_score=h_score,
+                highest_threat_distance=h_dist,
+                highest_threat_angle=h_angle,
+                highest_threat_in_forward_cone=h_cone,
+                defensive_reason=strategy_result.defensive_reason,
                 active_threat_count=perception_state.active_threat_count
             )
             
