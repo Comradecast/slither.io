@@ -46,6 +46,11 @@ class Config:
     DEATH_DROP_PELLET_VALUE: float = 5.0  # Approx value per death-drop pellet
     DEATH_DROP_RADIUS: float = 8.0
     FOOD_COLLECTION_MARGIN: float = 5.0   # Extra radius for food pickup
+    FOOD_VACUUM_RADIUS: float = 90.0      # Distance where food can be pulled toward the head
+    FOOD_VACUUM_CONE_ANGLE: float = 1.57079632679  # Forward pickup cone width in radians
+    FOOD_VACUUM_MIN_SPEED: float = 20.0   # Attraction speed near the far edge
+    FOOD_VACUUM_MAX_SPEED: float = 240.0  # Attraction speed near the head
+    FOOD_VACUUM_ACCELERATION_EXPONENT: float = 2.0  # Nonlinear pull strength curve
 
     # ── AI Opponents ─────────────────────────────────────────────────────
     AI_COUNT: int = 15                    # Number of AI opponent snakes

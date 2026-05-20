@@ -54,6 +54,7 @@ class World:
         # 3. Food collection
         for snake in self.snakes:
             if snake.alive:
+                self.food_manager.apply_vacuum(snake, dt)
                 mass_gained = self.food_manager.try_eat(snake)
                 if mass_gained > 0:
                     snake.mass += mass_gained

@@ -51,3 +51,29 @@ class FoodManager:
             self.items.remove(food)
             
         return mass_gained
+
+    def apply_vacuum(self, snake, dt: float):
+        """Move food in the snake's forward cone toward the head."""
+        if dt <= 0:
+            return
+
+        forward = Vector2(math.cos(snake.angle), math.sin(snake.angle))
+        cone_threshold = math.cos(Config.FOOD_VACUUM_CONE_ANGLE / 2.0)
+
+        for food in self.items:
+            to_food = food.pos - snake.pos
+            distance = to_food.length()
+            if distance == 0 or distance > Config.FOOD_VACUUM_RADIUS:
+                continue
+
+            direction_to_food = to_food * (1.0 / distance)
+            if (forward.x * direction_to_food.x + forward.y * direction_to_food.y) < cone_threshold:
+                continue
+
+            closeness = 1.0 - (distance / Config.FOOD_VACUUM_RADIUS)
+            speed_range = Config.FOOD_VACUUM_MAX_SPEED - Config.FOOD_VACUUM_MIN_SPEED
+            speed = Config.FOOD_VACUUM_MIN_SPEED + speed_range * (
+                closeness ** Config.FOOD_VACUUM_ACCELERATION_EXPONENT
+            )
+            step = min(speed * dt, distance)
+            food.pos = food.pos - direction_to_food * step
