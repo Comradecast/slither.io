@@ -24,6 +24,7 @@ pip install -r requirements.txt
 ```bash
 python -m sandbox.main
 ```
+*Note: Phase 3 implements the foundational Bot Controller pipeline. The dummy AI spawned in `main.py` is now driven by this pipeline (avoiding boundaries and seeking food).*
 
 ## Running Tests
 

@@ -2,20 +2,28 @@ from __future__ import annotations
 from sandbox.snake import Snake
 from sandbox.food import FoodManager
 from sandbox.collision import CollisionDetector
+from sandbox.bot.controller import BotController
 
 class World:
     def __init__(self):
         self.snakes: list[Snake] = []
         self.food_manager = FoodManager()
+        self.bot_controllers: dict[int, BotController] = {}
         self.tick = 0
         self.elapsed = 0.0
 
-    def spawn_snake(self, snake_id: int, x: float, y: float) -> Snake:
+    def spawn_snake(self, snake_id: int, x: float, y: float, is_bot: bool = False) -> Snake:
         snake = Snake(snake_id, x, y)
         self.snakes.append(snake)
+        if is_bot:
+            self.bot_controllers[snake.id] = BotController(snake)
         return snake
 
     def update(self, dt: float):
+        # 0. Bot controllers
+        for bot_id, controller in self.bot_controllers.items():
+            controller.update(self.snakes, self.food_manager.items)
+            
         # 1. Update snakes
         for snake in self.snakes:
             snake.update(dt)

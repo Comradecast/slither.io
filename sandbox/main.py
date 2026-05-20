@@ -18,7 +18,7 @@ def main():
     player = world.spawn_snake(0, 0, 0)
     
     # Spawn dummy AI
-    world.spawn_snake(1, 200, 200)
+    world.spawn_snake(1, 200, 200, is_bot=True)
 
     running = True
     while running:
