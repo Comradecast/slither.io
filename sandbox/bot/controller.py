@@ -41,6 +41,17 @@ class BotController:
         # Log decision
         if self.logger:
             nearest_food_dist = perception_state.visible_food[0].distance if perception_state.visible_food else None
+            
+            t_dist = None
+            t_score = None
+            t_pos_x = None
+            t_pos_y = None
+            if perception_state.nearest_threat:
+                t_dist = perception_state.nearest_threat.distance
+                t_score = perception_state.nearest_threat.score
+                t_pos_x = perception_state.nearest_threat.pos.x
+                t_pos_y = perception_state.nearest_threat.pos.y
+                
             self.logger.log_decision(
                 tick=tick,
                 snake_id=self.snake.id,
@@ -54,7 +65,12 @@ class BotController:
                 steering_heading=steering_result.heading,
                 boost=action.boost,
                 nearest_food_distance=nearest_food_dist,
-                boundary_distance=perception_state.boundary_distance
+                boundary_distance=perception_state.boundary_distance,
+                nearest_threat_distance=t_dist,
+                nearest_threat_score=t_score,
+                nearest_threat_position_x=t_pos_x,
+                nearest_threat_position_y=t_pos_y,
+                active_threat_count=perception_state.active_threat_count
             )
             
         if self.metrics:

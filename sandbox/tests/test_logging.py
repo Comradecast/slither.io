@@ -13,7 +13,10 @@ def test_logger_writes_one_record():
             tick=1, snake_id=42, pos_x=10.0, pos_y=20.0, mass=15.0,
             heading=3.14, strategy_mode="SEEK_FOOD", target_pos_x=100.0,
             target_pos_y=200.0, steering_heading=1.57, boost=False,
-            nearest_food_distance=90.0, boundary_distance=2800.0
+            nearest_food_distance=90.0, boundary_distance=2800.0,
+            nearest_threat_distance=50.0, nearest_threat_score=150.0,
+            nearest_threat_position_x=60.0, nearest_threat_position_y=20.0,
+            active_threat_count=1
         )
         
         assert os.path.exists(log_path)
@@ -25,6 +28,8 @@ def test_logger_writes_one_record():
             assert record["snake_id"] == 42
             assert record["strategy_mode"] == "SEEK_FOOD"
             assert record["position"]["x"] == 10.0
+            assert record["nearest_threat_distance"] == 50.0
+            assert record["active_threat_count"] == 1
 
 def test_logger_appends_multiple_records():
     with tempfile.TemporaryDirectory() as temp_dir:

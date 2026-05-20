@@ -16,7 +16,12 @@ class GameLogger:
     def log_decision(self, tick: int, snake_id: int, pos_x: float, pos_y: float, mass: float,
                      heading: float, strategy_mode: str, target_pos_x: float | None,
                      target_pos_y: float | None, steering_heading: float, boost: bool,
-                     nearest_food_distance: float | None, boundary_distance: float):
+                     nearest_food_distance: float | None, boundary_distance: float,
+                     nearest_threat_distance: float | None = None,
+                     nearest_threat_score: float | None = None,
+                     nearest_threat_position_x: float | None = None,
+                     nearest_threat_position_y: float | None = None,
+                     active_threat_count: int = 0):
         """Write a single decision record."""
         if not self.output_path:
             return
@@ -32,7 +37,11 @@ class GameLogger:
             "steering_heading": round(steering_heading, 4),
             "boost": boost,
             "nearest_food_distance": round(nearest_food_distance, 2) if nearest_food_distance is not None else None,
-            "boundary_distance": round(boundary_distance, 2)
+            "boundary_distance": round(boundary_distance, 2),
+            "nearest_threat_distance": round(nearest_threat_distance, 2) if nearest_threat_distance is not None else None,
+            "nearest_threat_score": round(nearest_threat_score, 2) if nearest_threat_score is not None else None,
+            "nearest_threat_position": {"x": round(nearest_threat_position_x, 2), "y": round(nearest_threat_position_y, 2)} if nearest_threat_position_x is not None and nearest_threat_position_y is not None else None,
+            "active_threat_count": active_threat_count
         }
 
         with open(self.output_path, 'a') as f:
