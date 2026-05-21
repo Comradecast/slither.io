@@ -3,12 +3,14 @@ import argparse
 import random
 from dataclasses import asdict, dataclass
 from sandbox.config import Config
-from sandbox.food import FoodItem
-from sandbox.world import World
+from sandbox.scenarios import SCENARIO_NAMES, create_scenario
 
 
 @dataclass
 class EvaluationSummary:
+    scenario_name: str
+    seed: int | None
+    ticks_requested: int
     ticks_elapsed: int
     final_mass: float
     peak_mass: float
@@ -18,19 +20,30 @@ class EvaluationSummary:
     decision_count: int
 
 
-def run_evaluation(ticks: int = 300, seed: int | None = None) -> EvaluationSummary:
+@dataclass
+class BenchmarkSummary:
+    scenarios: list[EvaluationSummary]
+    total_scenarios: int
+    survived_count: int
+
+
+def run_evaluation(
+    ticks: int = 300,
+    seed: int | None = None,
+    scenario: str = "baseline_farming",
+) -> EvaluationSummary:
     """Run a deterministic headless bot simulation and return summary metrics."""
     if ticks < 0:
         raise ValueError("ticks must be non-negative")
 
     random_state = random.getstate()
     if seed is not None:
-        random.seed(seed)
+            random.seed(seed)
 
     try:
-        world = World()
-        bot = world.spawn_snake(1, 0, 0, is_bot=True, track_metrics=True)
-        _seed_food(world)
+        scenario_state = create_scenario(scenario)
+        world = scenario_state.world
+        bot = next(s for s in world.snakes if s.id == scenario_state.bot_id)
 
         for _ in range(ticks):
             if not bot.alive:
@@ -42,6 +55,9 @@ def run_evaluation(ticks: int = 300, seed: int | None = None) -> EvaluationSumma
         metrics = tracker.metrics
 
         return EvaluationSummary(
+            scenario_name=scenario_state.name,
+            seed=seed,
+            ticks_requested=ticks,
             ticks_elapsed=metrics.ticks_elapsed,
             final_mass=metrics.final_mass,
             peak_mass=metrics.peak_mass,
@@ -54,21 +70,30 @@ def run_evaluation(ticks: int = 300, seed: int | None = None) -> EvaluationSumma
         random.setstate(random_state)
 
 
-def _seed_food(world: World):
-    """Place deterministic starter food, then let normal spawning maintain density."""
-    for index in range(12):
-        x = 80.0 + index * 35.0
-        value = Config.NATURAL_FOOD_MIN_VALUE + (index % 4)
-        world.food_manager.items.append(FoodItem(x, 0.0, value))
+def run_benchmark(ticks: int = 300, seed: int | None = None) -> BenchmarkSummary:
+    summaries = [
+        run_evaluation(ticks=ticks, seed=seed, scenario=scenario_name)
+        for scenario_name in SCENARIO_NAMES
+    ]
+    return BenchmarkSummary(
+        scenarios=summaries,
+        total_scenarios=len(summaries),
+        survived_count=sum(1 for summary in summaries if summary.survival_status == "alive"),
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a headless local bot evaluation.")
     parser.add_argument("--ticks", type=int, default=300)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--scenario", choices=SCENARIO_NAMES, default="baseline_farming")
+    parser.add_argument("--all-scenarios", action="store_true")
     args = parser.parse_args()
 
-    print(asdict(run_evaluation(ticks=args.ticks, seed=args.seed)))
+    if args.all_scenarios:
+        print(asdict(run_benchmark(ticks=args.ticks, seed=args.seed)))
+    else:
+        print(asdict(run_evaluation(ticks=args.ticks, seed=args.seed, scenario=args.scenario)))
 
 
 if __name__ == "__main__":

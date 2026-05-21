@@ -39,3 +39,15 @@ Run a deterministic local bot simulation without opening a Pygame window:
 ```bash
 python -m sandbox.evaluation --ticks 300 --seed 1
 ```
+
+Run a named scenario:
+
+```bash
+python -m sandbox.evaluation --scenario baseline_farming --ticks 300 --seed 1
+```
+
+Run the full local scenario benchmark:
+
+```bash
+python -m sandbox.evaluation --all-scenarios --ticks 300 --seed 1
+```
