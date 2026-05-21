@@ -9,6 +9,8 @@ class PerceivedFood:
     pos: Vector2
     value: float
     distance: float
+    angle_diff: float
+    in_front: bool
 
 @dataclass
 class PerceivedSnake:
@@ -40,6 +42,7 @@ class PerceptionState:
     visible_snakes: list[PerceivedSnake] = field(default_factory=list)
     nearest_threat: PerceivedThreat | None = None
     highest_threat: PerceivedThreat | None = None
+    visible_threats: list[PerceivedThreat] = field(default_factory=list)
     active_threat_count: int = 0
 
 
@@ -60,7 +63,15 @@ class Perception:
         for f in food_items:
             dist = my_snake.pos.distance_to(f.pos)
             if dist <= self.vision_radius:
-                visible_food.append(PerceivedFood(f.pos.copy(), f.value, dist))
+                angle_to_food = math.atan2(f.pos.y - my_snake.pos.y, f.pos.x - my_snake.pos.x)
+                angle_diff = self._normalize_angle(angle_to_food - my_snake.angle)
+                visible_food.append(PerceivedFood(
+                    pos=f.pos.copy(),
+                    value=f.value,
+                    distance=dist,
+                    angle_diff=angle_diff,
+                    in_front=abs(angle_diff) <= math.pi / 2,
+                ))
                 
         # Sort food by distance
         visible_food.sort(key=lambda x: x.distance)
@@ -82,9 +93,7 @@ class Perception:
                 if dist <= self.vision_radius:
                     # Calculate angle
                     angle_to_threat = math.atan2(segment.y - my_snake.pos.y, segment.x - my_snake.pos.x)
-                    angle_diff = (angle_to_threat - my_snake.angle)
-                    # Normalize to [-pi, pi]
-                    angle_diff = (angle_diff + math.pi) % (2 * math.pi) - math.pi
+                    angle_diff = self._normalize_angle(angle_to_threat - my_snake.angle)
                     
                     in_forward_cone = abs(angle_diff) < self.FORWARD_CONE_ANGLE
                     
@@ -124,5 +133,10 @@ class Perception:
             visible_snakes=visible_snakes,
             nearest_threat=nearest_threat,
             highest_threat=highest_threat,
+            visible_threats=threats,
             active_threat_count=len(threats)
         )
+
+    @staticmethod
+    def _normalize_angle(angle: float) -> float:
+        return (angle + math.pi) % (2 * math.pi) - math.pi

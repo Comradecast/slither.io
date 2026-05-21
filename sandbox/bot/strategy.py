@@ -16,9 +16,18 @@ class StrategyResult:
     mode: StrategyMode
     target_pos: Vector2 | None = None
     defensive_reason: str | None = None
+    food_score: float | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
+
+    FOOD_VALUE_WEIGHT = 100.0
+    FOOD_DISTANCE_PENALTY = 1.0
+    FOOD_FRONT_BONUS = 25.0
+    FOOD_BEHIND_PENALTY = 75.0
+    FOOD_THREAT_RADIUS = Config.BASE_RADIUS * 12.0
+    FOOD_THREAT_PENALTY = 250.0
+    FOOD_BLOCKED_BY_THREAT_PENALTY = 200.0
     
     def decide(self, perception: PerceptionState) -> StrategyResult:
         # 1. Boundary avoidance is highest priority
@@ -33,8 +42,29 @@ class Strategy:
             
         # 3. Seek food if safe
         if perception.visible_food:
-            nearest_food = perception.visible_food[0]
-            return StrategyResult(mode=StrategyMode.SEEK_FOOD, target_pos=nearest_food.pos)
+            best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
+            return StrategyResult(
+                mode=StrategyMode.SEEK_FOOD,
+                target_pos=best_food.pos,
+                food_score=self.score_food(best_food, perception),
+            )
             
         # 4. Default: wander
         return StrategyResult(mode=StrategyMode.WANDER, target_pos=None)
+
+    def score_food(self, food, perception: PerceptionState) -> float:
+        score = (food.value * self.FOOD_VALUE_WEIGHT) - (food.distance * self.FOOD_DISTANCE_PENALTY)
+        score += self.FOOD_FRONT_BONUS if food.in_front else -self.FOOD_BEHIND_PENALTY
+
+        for threat in perception.visible_threats:
+            if food.pos.distance_to(threat.pos) <= self.FOOD_THREAT_RADIUS:
+                score -= self.FOOD_THREAT_PENALTY
+            if (
+                food.in_front
+                and threat.in_forward_cone
+                and threat.distance < food.distance
+                and abs(threat.angle_diff - food.angle_diff) < 0.35
+            ):
+                score -= self.FOOD_BLOCKED_BY_THREAT_PENALTY
+
+        return score

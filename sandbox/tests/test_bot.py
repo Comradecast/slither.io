@@ -4,7 +4,7 @@ from sandbox.vector import Vector2
 from sandbox.snake import Snake
 from sandbox.food import FoodItem
 from sandbox.config import Config
-from sandbox.bot.perception import Perception
+from sandbox.bot.perception import Perception, PerceivedThreat
 from sandbox.bot.strategy import Strategy, StrategyMode
 from sandbox.bot.steering import Steering
 from sandbox.bot.controller import BotController
@@ -116,6 +116,65 @@ def test_strategy_food_seeking_when_safe():
     strat = Strategy()
     result = strat.decide(state)
     assert result.mode == StrategyMode.SEEK_FOOD
+
+def test_strategy_prefers_higher_value_nearby_food():
+    s = Snake(1, 0, 0, 0)
+    low_value = FoodItem(10, 0, 1.0)
+    high_value = FoodItem(30, 0, 4.0)
+    p = Perception(vision_radius=100)
+    state = p.build(s, [s], [low_value, high_value])
+
+    result = Strategy().decide(state)
+
+    assert result.mode == StrategyMode.SEEK_FOOD
+    assert result.target_pos.x == 30
+
+def test_strategy_distant_high_value_does_not_always_win():
+    s = Snake(1, 0, 0, 0)
+    close_reasonable = FoodItem(30, 0, 2.0)
+    distant_high_value = FoodItem(500, 0, 5.0)
+    p = Perception(vision_radius=600)
+    state = p.build(s, [s], [close_reasonable, distant_high_value])
+
+    result = Strategy().decide(state)
+
+    assert result.mode == StrategyMode.SEEK_FOOD
+    assert result.target_pos.x == 30
+
+def test_strategy_prefers_front_food_over_similar_behind_food():
+    s = Snake(1, 0, 0, 0)
+    front_food = FoodItem(40, 0, 2.0)
+    behind_food = FoodItem(-40, 0, 2.0)
+    p = Perception(vision_radius=100)
+    state = p.build(s, [s], [behind_food, front_food])
+
+    result = Strategy().decide(state)
+
+    assert result.mode == StrategyMode.SEEK_FOOD
+    assert result.target_pos.x == 40
+
+def test_strategy_penalizes_food_near_known_threat():
+    s = Snake(1, 0, 0, 0)
+    risky_high_value = FoodItem(45, 0, 5.0)
+    safe_food = FoodItem(40, 80, 2.0)
+    p = Perception(vision_radius=100)
+    state = p.build(s, [s], [risky_high_value, safe_food])
+    state.visible_threats = [
+        PerceivedThreat(
+            pos=Vector2(40, 0),
+            source_id=2,
+            distance=40,
+            score=0,
+            angle_diff=0,
+            in_forward_cone=True,
+        )
+    ]
+
+    result = Strategy().decide(state)
+
+    assert result.mode == StrategyMode.SEEK_FOOD
+    assert result.target_pos.x == 40
+    assert result.target_pos.y == 80
 
 def test_steering_valid_heading_seek():
     s = Snake(1, 100, 100, 0)
