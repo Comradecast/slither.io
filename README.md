@@ -31,3 +31,11 @@ python -m sandbox.main
 ```bash
 pytest sandbox/tests/ -v
 ```
+
+## Headless Evaluation
+
+Run a deterministic local bot simulation without opening a Pygame window:
+
+```bash
+python -m sandbox.evaluation --ticks 300 --seed 1
+```
