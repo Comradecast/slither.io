@@ -132,6 +132,8 @@ class ScenarioRunner:
             "collision_risk": eval_result.collision_risk,
             "enemy_head_intercept_risk": eval_result.enemy_head_intercept_risk,
             "boundary_forward_distance": eval_result.boundary_forward_distance,
+            "enemy_head_intercept_time": eval_result.enemy_head_intercept_time,
+            "enemy_head_intercept_distance": eval_result.enemy_head_intercept_distance,
             "my_radius": state.my_radius,
             "my_mass": state.my_mass,
         })
@@ -214,7 +216,7 @@ def build_scenarios() -> Iterable[ScenarioCase]:
 
     intercept_snake = Snake(1, 0, 0, 0)
     intercept_snake.angle = math.pi / 2
-    intercept_enemy = Snake(2, 40, 12, math.radians(-90))
+    intercept_enemy = Snake(2, 75, 80, math.radians(-90))
     intercept_enemy.speed = Config.BASE_SPEED
     intercept_enemy.segments = []
     yield ScenarioCase(
@@ -227,8 +229,24 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         requested_heading=0.0,
         validator=lambda result: (
             result["enemy_head_intercept_risk"] > 1.5
+            and result["enemy_head_intercept_time"] is not None
             and abs(result["selected_heading"]) > 0.1
         ),
+    )
+
+    non_crossing_snake = Snake(1, 0, 0, 0)
+    non_crossing_enemy = Snake(2, 75, 80, math.radians(90))
+    non_crossing_enemy.speed = Config.BASE_SPEED
+    non_crossing_enemy.segments = []
+    yield ScenarioCase(
+        name="enemy_head_projection_non_crossing",
+        my_snake=non_crossing_snake,
+        snakes=[non_crossing_snake, non_crossing_enemy],
+        foods=[],
+        expected_gate_reason="none",
+        expected_override=False,
+        requested_heading=0.0,
+        validator=lambda result: result["enemy_head_intercept_risk"] == 0.0,
     )
 
     risky_food_snake = Snake(1, 0, 0, 0)

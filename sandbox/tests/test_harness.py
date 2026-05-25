@@ -11,6 +11,7 @@ EXPECTED_SCENARIOS = [
     "large_snake_near_boundary_wall_facing",
     "large_snake_near_boundary_escape_heading",
     "enemy_head_intercept_crossing",
+    "enemy_head_projection_non_crossing",
     "food_near_threat",
     "safe_food_path",
 ]
@@ -42,6 +43,8 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "collision_risk" in data
         assert "enemy_head_intercept_risk" in data
         assert "boundary_forward_distance" in data
+        assert "enemy_head_intercept_time" in data
+        assert "enemy_head_intercept_distance" in data
         assert "my_radius" in data
         assert "my_mass" in data
 

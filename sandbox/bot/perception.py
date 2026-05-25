@@ -20,6 +20,8 @@ class PerceivedSnake:
     distance: float
     radius: float
     speed: float = Config.BASE_SPEED
+    heading: float = 0.0
+    wanted_heading: float | None = None
 
 @dataclass
 class PerceivedThreat:
@@ -95,7 +97,9 @@ class Perception:
                     mass=s.mass, 
                     distance=dist_to_head, 
                     radius=Config.get_radius(s.mass),
-                    speed=s.speed
+                    speed=s.speed,
+                    heading=getattr(s, "angle", 0.0),
+                    wanted_heading=getattr(s, "target_angle", getattr(s, "wang", None)),
                 ))
                 
             # Treat enemy segments as threats

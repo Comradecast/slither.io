@@ -119,6 +119,36 @@ def test_boundary_distance_near_east_boundary_heading_west_is_long():
     assert distance == pytest.approx((Config.WORLD_RADIUS * 2.0) - 60.0)
 
 
+def test_enemy_projection_helper_returns_expected_future_point_heading_east():
+    projected = Strategy.project_enemy_positions(
+        Vector2(10, 20),
+        speed=100.0,
+        heading=0.0,
+        sample_times=(0.5,),
+    )
+
+    sample_time, point = projected[0]
+
+    assert sample_time == pytest.approx(0.5)
+    assert point.x == pytest.approx(60.0)
+    assert point.y == pytest.approx(20.0)
+
+
+def test_enemy_projection_helper_returns_expected_future_point_heading_north():
+    projected = Strategy.project_enemy_positions(
+        Vector2(10, 20),
+        speed=100.0,
+        heading=math.pi / 2,
+        sample_times=(0.5,),
+    )
+
+    sample_time, point = projected[0]
+
+    assert sample_time == pytest.approx(0.5)
+    assert point.x == pytest.approx(10.0)
+    assert point.y == pytest.approx(70.0)
+
+
 def test_safety_gate_overrides_wall_facing_boundary_heading():
     s = Snake(1, Config.WORLD_RADIUS - 60, 0, 0)
     s.mass = 5000
@@ -145,6 +175,82 @@ def test_safety_gate_allows_escape_boundary_heading():
     assert reason == "none"
     assert safe_boost is True
     assert safe_angle == pytest.approx(math.pi)
+
+
+def test_strategy_detects_projected_crossing_risk():
+    s = Snake(1, 0, 0, 0)
+    s.speed = Config.BASE_SPEED
+    state = Perception(vision_radius=200).build(s, [s], [])
+    state.visible_snakes = [
+        PerceivedSnake(
+            id=2,
+            head=Vector2(75, 80),
+            mass=100,
+            distance=110,
+            radius=Config.get_radius(100),
+            speed=Config.BASE_SPEED,
+            heading=-math.pi / 2,
+        )
+    ]
+
+    res = Strategy()._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
+
+    assert res.enemy_head_intercept_risk == 2.0
+    assert res.enemy_head_intercept_time == pytest.approx(0.5)
+    assert res.enemy_head_intercept_distance == pytest.approx(75.0)
+
+
+def test_strategy_does_not_flag_non_crossing_projected_enemy():
+    s = Snake(1, 0, 0, 0)
+    s.speed = Config.BASE_SPEED
+    state = Perception(vision_radius=200).build(s, [s], [])
+    state.visible_snakes = [
+        PerceivedSnake(
+            id=2,
+            head=Vector2(75, 80),
+            mass=100,
+            distance=110,
+            radius=Config.get_radius(100),
+            speed=Config.BASE_SPEED,
+            heading=math.pi / 2,
+        )
+    ]
+
+    res = Strategy()._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
+
+    assert res.enemy_head_intercept_risk == 0.0
+    assert res.enemy_head_intercept_time is None
+
+
+def test_safety_gate_overrides_projected_intercept():
+    s = Snake(1, 0, 0, 0)
+    s.speed = Config.BASE_SPEED
+    enemy = Snake(2, 75, 80, -math.pi / 2)
+    enemy.speed = Config.BASE_SPEED
+    enemy.segments = []
+    state = Perception(vision_radius=200).build(s, [s, enemy], [])
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(state, 0.0, True)
+
+    assert overridden is True
+    assert reason == "enemy_head_intercept"
+    assert safe_boost is False
+
+
+def test_safety_gate_allows_non_crossing_safe_heading():
+    s = Snake(1, 0, 0, 0)
+    s.speed = Config.BASE_SPEED
+    enemy = Snake(2, 75, 80, math.pi / 2)
+    enemy.speed = Config.BASE_SPEED
+    enemy.segments = []
+    state = Perception(vision_radius=200).build(s, [s, enemy], [])
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(state, 0.0, True)
+
+    assert overridden is False
+    assert reason == "none"
+    assert safe_boost is True
+    assert safe_angle == pytest.approx(0.0)
 
 def test_strategy_threat_avoidance():
     # Safe from boundary, but near enemy
@@ -284,19 +390,20 @@ def test_controller_returns_action_no_boost():
     assert not action.boost # 7. Controller does not boost by default
 
 
-def test_strategy_evaluate_heading_handles_visible_enemy_snake():
+def test_strategy_evaluate_heading_uses_projected_enemy_snake():
     s = Snake(1, 0, 0, 0)
-    s.speed = 5.0
-    p = Perception(vision_radius=100)
+    s.speed = Config.BASE_SPEED
+    p = Perception(vision_radius=200)
     state = p.build(s, [s], [])
     state.visible_snakes = [
         PerceivedSnake(
             id=2,
-            head=Vector2(10, 15),
+            head=Vector2(75, 80),
             mass=100,
-            distance=20,
+            distance=110,
             radius=10.0,
-            speed=5.0,
+            speed=Config.BASE_SPEED,
+            heading=math.pi / 2,
         )
     ]
     
@@ -304,28 +411,26 @@ def test_strategy_evaluate_heading_handles_visible_enemy_snake():
     res = strat._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
     assert res.enemy_head_intercept_risk == 0.0
     
-    # At 20 distance along X ray, with speed 5 (default Config.BASE_SPEED), 
-    # it takes 4 time units, which is > 1.0 so no imminent intercept.
-    # But if we make speed 25...
-    state.visible_snakes[0].speed = 7.5
+    state.visible_snakes[0].heading = -math.pi / 2
     res = strat._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
     assert res.enemy_head_intercept_risk == 2.0
 
 
 def test_strategy_evaluate_heading_uses_dynamic_enemy_radius():
     s = Snake(1, 0, 0, 0)
-    s.speed = 5.0
-    p = Perception(vision_radius=100)
+    s.speed = Config.BASE_SPEED
+    p = Perception(vision_radius=200)
     state = p.build(s, [s], [])
     
-    # Place enemy slightly off ray
     state.visible_snakes = [
         PerceivedSnake(
             id=2,
-            head=Vector2(20, 12),
+            head=Vector2(75, 30),
             mass=100,
-            distance=20,
-            radius=1.0, # Tiny radius
+            distance=82,
+            radius=1.0,
+            speed=Config.BASE_SPEED,
+            heading=-math.pi / 2,
         )
     ]
     
@@ -333,10 +438,7 @@ def test_strategy_evaluate_heading_uses_dynamic_enemy_radius():
     res_safe = strat._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
     assert res_safe.enemy_head_intercept_risk == 0.0
     
-    # Now make the enemy huge
-    state.visible_snakes[0].radius = 10.0
-    # Also need high speed to trigger intercept logic
-    state.visible_snakes[0].speed = 30.0 
+    state.visible_snakes[0].radius = 40.0
     
     res_danger = strat._evaluate_heading(0.0, 1.0, 0.0, state, 10.0)
     assert res_danger.enemy_head_intercept_risk == 2.0

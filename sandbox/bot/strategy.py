@@ -12,6 +12,8 @@ class EvalResult:
     open_space_score: float = 1.0
     enemy_head_intercept_risk: float = 0.0
     boundary_forward_distance: float | None = None
+    enemy_head_intercept_time: float | None = None
+    enemy_head_intercept_distance: float | None = None
 
 class StrategyMode(Enum):
     WANDER = "wander"
@@ -35,6 +37,7 @@ class Strategy:
     FOOD_BEHIND_PENALTY = 75.0
     FOOD_THREAT_PENALTY = 250.0
     FOOD_BLOCKED_BY_THREAT_PENALTY = 200.0
+    ENEMY_PROJECTION_SAMPLE_TIMES = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0)
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -63,10 +66,32 @@ class Strategy:
 
         return max(0.0, -projection + math.sqrt(discriminant))
 
+    @staticmethod
+    def project_enemy_positions(
+        enemy_head: Vector2,
+        speed: float,
+        heading: float,
+        sample_times: tuple[float, ...] | None = None,
+        wanted_heading: float | None = None,
+    ) -> list[tuple[float, Vector2]]:
+        projected_heading = heading if wanted_heading is None else wanted_heading
+        sample_times = sample_times or Strategy.ENEMY_PROJECTION_SAMPLE_TIMES
+        return [
+            (
+                sample_time,
+                Vector2(
+                    enemy_head.x + math.cos(projected_heading) * speed * sample_time,
+                    enemy_head.y + math.sin(projected_heading) * speed * sample_time,
+                ),
+            )
+            for sample_time in sample_times
+        ]
+
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
         
-        max_dist = max(perception.my_radius * 10, min_turn_radius * 2.0)
+        max_projection_distance = perception.my_speed * max(self.ENEMY_PROJECTION_SAMPLE_TIMES)
+        max_dist = max(perception.my_radius * 10, min_turn_radius * 2.0, max_projection_distance)
         
         # 1. Check body threats
         for threat in perception.visible_threats:
@@ -83,34 +108,35 @@ class Strategy:
                 if perp_dist < envelope:
                     res.collision_risk = 1.0
                     
-        # 2. Check enemy head intercepts
+        # 2. Check projected enemy head intercepts
         for enemy in perception.visible_snakes:
-            ex = enemy.head.x - perception.my_head.x
-            ey = enemy.head.y - perception.my_head.y
-            
-            t = ex * ray_dx + ey * ray_dy
-            if 0 < t < max_dist:
-                perp_dist = abs(-ex * ray_dy + ey * ray_dx)
-                
-                # Requirement: Ensure collision envelopes use perception.my_radius + enemy.radius
-                envelope = perception.my_radius + enemy.radius
-                
-                if perp_dist < envelope:
-                    # Requirement: Replace enemy_time = speed-magnitude logic with distance-to-intersection / enemy.speed
-                    intersection_x = perception.my_head.x + ray_dx * t
-                    intersection_y = perception.my_head.y + ray_dy * t
-                    
-                    enemy_dist_to_intersection = math.hypot(
-                        intersection_x - enemy.head.x,
-                        intersection_y - enemy.head.y,
-                    )
-                    
-                    enemy_speed = getattr(enemy, "speed", Config.BASE_SPEED)
-                    enemy_time = enemy_dist_to_intersection / max(1.0, enemy_speed)
+            envelope = perception.my_radius + enemy.radius
+            enemy_speed = getattr(enemy, "speed", Config.BASE_SPEED)
+            enemy_heading = getattr(enemy, "heading", 0.0)
+            enemy_wanted_heading = getattr(enemy, "wanted_heading", None)
+            projected_positions = self.project_enemy_positions(
+                enemy.head,
+                enemy_speed,
+                enemy_heading,
+                wanted_heading=enemy_wanted_heading,
+            )
+
+            for enemy_time, projected_head in projected_positions:
+                ex = projected_head.x - perception.my_head.x
+                ey = projected_head.y - perception.my_head.y
+                t = ex * ray_dx + ey * ray_dy
+                if 0 < t < max_dist:
+                    perp_dist = abs(-ex * ray_dy + ey * ray_dx)
                     my_time = t / max(1.0, perception.my_speed)
-                    
-                    if abs(my_time - enemy_time) < 0.5 or my_time > enemy_time:
+
+                    if perp_dist < envelope and abs(my_time - enemy_time) < 0.5:
                         res.enemy_head_intercept_risk = 2.0
+                        res.enemy_head_intercept_time = enemy_time
+                        res.enemy_head_intercept_distance = t
+                        break
+
+            if res.enemy_head_intercept_risk > 1.5:
+                break
         
         # 3. Check heading-aware boundary space
         boundary_forward_distance = self.boundary_distance_along_ray(
