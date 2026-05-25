@@ -16,10 +16,10 @@ A loot cluster is a deterministic grouping of visible food pellets. The strategy
 A group is considered a high-value cluster when it has at least three pellets and either its total value meets the configured cluster value threshold or it contains enough high-value pellets.
 
 ## Scoring Inputs
-Cluster score uses total food value, pellet count, nearest distance, and average distance. The score is compared with the best individual food score. A cluster can replace the individual food target only when its score is higher and the approach remains safe.
+Cluster score uses total food value, pellet count, nearest distance, and average distance. The score is compared with the best individual food score. A cluster can replace the individual food target only when its score is higher and at least one approach point remains safe.
 
 ## Safety Checks
-Before selecting a cluster, Strategy evaluates the heading from the snake head to the cluster center with the existing deterministic heading evaluator. A cluster is rejected when that heading has:
+Before selecting a cluster, Strategy evaluates candidate approach headings with the existing deterministic heading evaluator. The center is preferred when safe; otherwise safe pellet entry points can be used for collection. A candidate is rejected when that heading has:
 
 - projected body collision risk
 - projected enemy head intercept risk

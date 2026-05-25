@@ -126,6 +126,17 @@ class ScenarioRunner:
                     if strategy_result.loot_cluster_target
                     else None
                 ),
+                "loot_cluster_target_kind": strategy_result.loot_cluster_target_kind,
+                "loot_cluster_approach_x": (
+                    strategy_result.loot_cluster_approach.x
+                    if strategy_result.loot_cluster_approach
+                    else None
+                ),
+                "loot_cluster_approach_y": (
+                    strategy_result.loot_cluster_approach.y
+                    if strategy_result.loot_cluster_approach
+                    else None
+                ),
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -173,6 +184,17 @@ class ScenarioRunner:
             "loot_cluster_target_y": (
                 strategy_result.loot_cluster_target.y
                 if strategy_result.loot_cluster_target
+                else None
+            ),
+            "loot_cluster_target_kind": strategy_result.loot_cluster_target_kind,
+            "loot_cluster_approach_x": (
+                strategy_result.loot_cluster_approach.x
+                if strategy_result.loot_cluster_approach
+                else None
+            ),
+            "loot_cluster_approach_y": (
+                strategy_result.loot_cluster_approach.y
+                if strategy_result.loot_cluster_approach
                 else None
             ),
         })
@@ -395,6 +417,77 @@ def build_scenarios() -> Iterable[ScenarioCase]:
             and result["loot_cluster_total_value"] > 15.0
             and result["strategy"]["target_x"] > 180.0
             and result["strategy"]["target_y"] > 45.0
+        ),
+    )
+
+    guarded_center_snake = Snake(1, 0, 0, 0)
+    guarded_center_food = [
+        FoodItem(170, 40, 6.0),
+        FoodItem(190, 55, 5.5),
+        FoodItem(185, 72, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    yield ScenarioCase(
+        name="guarded_cluster_center_safe",
+        my_snake=guarded_center_snake,
+        snakes=[guarded_center_snake],
+        foods=guarded_center_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["loot_cluster_target_kind"] == "center"
+            and result["loot_cluster_approach_x"] == result["loot_cluster_target_x"]
+            and result["loot_cluster_approach_y"] == result["loot_cluster_target_y"]
+        ),
+    )
+
+    guarded_edge_snake = Snake(1, 0, 0, 0)
+    guarded_edge_food = [
+        FoodItem(150, 50, 6.0),
+        FoodItem(170, 0, 5.5),
+        FoodItem(190, -20, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    guarded_edge_enemy = Snake(2, 75, 80, math.radians(-90))
+    guarded_edge_enemy.speed = Config.BASE_SPEED
+    guarded_edge_enemy.segments = []
+    yield ScenarioCase(
+        name="guarded_cluster_edge_entry_preferred",
+        my_snake=guarded_edge_snake,
+        snakes=[guarded_edge_snake, guarded_edge_enemy],
+        foods=guarded_edge_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["loot_cluster_target_kind"] == "pellet"
+            and result["loot_cluster_approach_y"] > 0
+            and result["enemy_head_intercept_risk"] == 0.0
+        ),
+    )
+
+    guarded_blocked_snake = Snake(1, 0, 0, 0)
+    guarded_blocked_food = [
+        FoodItem(150, -8, 7.0),
+        FoodItem(166, 6, 6.0),
+        FoodItem(178, -4, 5.0),
+        FoodItem(40, 80, 2.0),
+    ]
+    guarded_blocking_enemy = Snake(2, 100, 0, 0)
+    guarded_blocking_enemy.segments = [Vector2(100, 0)]
+    yield ScenarioCase(
+        name="guarded_cluster_threat_blocks_collection",
+        my_snake=guarded_blocked_snake,
+        snakes=[guarded_blocked_snake, guarded_blocking_enemy],
+        foods=guarded_blocked_food,
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["loot_cluster_target_kind"] is None
+            and result["boost"] is False
         ),
     )
 

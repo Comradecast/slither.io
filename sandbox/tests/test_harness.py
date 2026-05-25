@@ -15,6 +15,9 @@ EXPECTED_SCENARIOS = [
     "food_near_threat",
     "safe_food_path",
     "loot_cluster_safe_preferred",
+    "guarded_cluster_center_safe",
+    "guarded_cluster_edge_entry_preferred",
+    "guarded_cluster_threat_blocks_collection",
     "loot_cluster_unsafe_rejected",
     "normal_food_without_cluster",
     "boost_safe_clear_path",
@@ -65,6 +68,9 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "loot_cluster_pellet_count" in data
         assert "loot_cluster_target_x" in data
         assert "loot_cluster_target_y" in data
+        assert "loot_cluster_target_kind" in data
+        assert "loot_cluster_approach_x" in data
+        assert "loot_cluster_approach_y" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):

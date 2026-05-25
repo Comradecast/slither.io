@@ -27,6 +27,14 @@ class LootCluster:
     high_value_pellet_count: int
     score: float
 
+
+@dataclass
+class LootApproach:
+    cluster: LootCluster
+    target: Vector2
+    target_kind: str
+    score: float
+
 class StrategyMode(Enum):
     WANDER = "wander"
     SEEK_FOOD = "seek_food"
@@ -43,6 +51,8 @@ class StrategyResult:
     loot_cluster_total_value: float | None = None
     loot_cluster_pellet_count: int | None = None
     loot_cluster_target: Vector2 | None = None
+    loot_cluster_target_kind: str | None = None
+    loot_cluster_approach: Vector2 | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -62,6 +72,8 @@ class Strategy:
     LOOT_CLUSTER_COUNT_BONUS = 20.0
     LOOT_CLUSTER_NEAREST_DISTANCE_PENALTY = 0.75
     LOOT_CLUSTER_AVERAGE_DISTANCE_PENALTY = 0.25
+    LOOT_CLUSTER_CENTER_APPROACH_BONUS = 1000.0
+    LOOT_CLUSTER_HIGH_VALUE_APPROACH_BONUS = 25.0
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -203,32 +215,89 @@ class Strategy:
             score=score,
         )
 
-    def _is_safe_target_heading(self, target_pos: Vector2, perception: PerceptionState) -> bool:
+    def _evaluate_target_heading(self, target_pos: Vector2, perception: PerceptionState) -> EvalResult | None:
         dx = target_pos.x - perception.my_head.x
         dy = target_pos.y - perception.my_head.y
         distance = math.hypot(dx, dy)
         if distance <= 0.0:
-            return False
+            return None
 
         requested_angle = math.atan2(dy, dx)
         min_turn_radius = perception.my_radius * 2.0 + (perception.my_mass / 100.0)
-        eval_result = self._evaluate_heading(
+        return self._evaluate_heading(
             requested_angle,
             dx / distance,
             dy / distance,
             perception,
             min_turn_radius,
         )
+
+    def _is_safe_target_heading(self, target_pos: Vector2, perception: PerceptionState) -> bool:
+        eval_result = self._evaluate_target_heading(target_pos, perception)
+        if eval_result is None:
+            return False
         return (
             eval_result.collision_risk <= 0.5
             and eval_result.open_space_score >= 0.15
             and eval_result.enemy_head_intercept_risk <= 1.5
         )
 
-    def _best_safe_loot_cluster(self, perception: PerceptionState) -> LootCluster | None:
+    def loot_cluster_approach_candidates(
+        self,
+        cluster: LootCluster,
+        perception: PerceptionState,
+    ) -> list[LootApproach]:
+        candidates = [
+            LootApproach(
+                cluster=cluster,
+                target=cluster.center,
+                target_kind="center",
+                score=cluster.score + self.LOOT_CLUSTER_CENTER_APPROACH_BONUS,
+            )
+        ]
+
+        ordered_foods = sorted(
+            cluster.foods,
+            key=lambda food: (
+                food.distance,
+                -food.value,
+                food.pos.x,
+                food.pos.y,
+            ),
+        )
+        for food in ordered_foods:
+            high_value_bonus = (
+                self.LOOT_CLUSTER_HIGH_VALUE_APPROACH_BONUS
+                if food.value >= self.LOOT_CLUSTER_HIGH_VALUE_THRESHOLD
+                else 0.0
+            )
+            candidates.append(LootApproach(
+                cluster=cluster,
+                target=food.pos,
+                target_kind="pellet",
+                score=(
+                    cluster.score
+                    + food.value * self.FOOD_VALUE_WEIGHT
+                    + high_value_bonus
+                    - food.distance * self.FOOD_DISTANCE_PENALTY
+                ),
+            ))
+
+        return sorted(
+            candidates,
+            key=lambda candidate: (
+                -candidate.score,
+                0 if candidate.target_kind == "center" else 1,
+                candidate.target.x,
+                candidate.target.y,
+            ),
+        )
+
+    def _best_safe_loot_approach(self, perception: PerceptionState) -> LootApproach | None:
         for cluster in self.detect_loot_clusters(perception.visible_food):
-            if self._is_safe_target_heading(cluster.center, perception):
-                return cluster
+            for candidate in self.loot_cluster_approach_candidates(cluster, perception):
+                if self._is_safe_target_heading(candidate.target, perception):
+                    return candidate
         return None
 
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
@@ -309,16 +378,18 @@ class Strategy:
         if perception.visible_food:
             best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
             best_food_score = self.score_food(best_food, perception)
-            best_cluster = self._best_safe_loot_cluster(perception)
-            if best_cluster is not None and best_cluster.score > best_food_score:
+            best_approach = self._best_safe_loot_approach(perception)
+            if best_approach is not None and best_approach.cluster.score > best_food_score:
                 return StrategyResult(
                     mode=StrategyMode.SEEK_FOOD,
-                    target_pos=best_cluster.center,
+                    target_pos=best_approach.target,
                     food_score=best_food_score,
-                    loot_cluster_score=best_cluster.score,
-                    loot_cluster_total_value=best_cluster.total_value,
-                    loot_cluster_pellet_count=best_cluster.pellet_count,
-                    loot_cluster_target=best_cluster.center,
+                    loot_cluster_score=best_approach.cluster.score,
+                    loot_cluster_total_value=best_approach.cluster.total_value,
+                    loot_cluster_pellet_count=best_approach.cluster.pellet_count,
+                    loot_cluster_target=best_approach.cluster.center,
+                    loot_cluster_target_kind=best_approach.target_kind,
+                    loot_cluster_approach=best_approach.target,
                 )
             return StrategyResult(
                 mode=StrategyMode.SEEK_FOOD,
