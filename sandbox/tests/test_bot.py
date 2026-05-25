@@ -240,6 +240,8 @@ def test_safety_gate_overrides_projected_intercept():
 def test_safety_gate_allows_non_crossing_safe_heading():
     s = Snake(1, 0, 0, 0)
     s.speed = Config.BASE_SPEED
+    s.mass = 100
+    s.recompute_segments()
     enemy = Snake(2, 75, 80, math.pi / 2)
     enemy.speed = Config.BASE_SPEED
     enemy.segments = []

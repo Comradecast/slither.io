@@ -14,6 +14,10 @@ EXPECTED_SCENARIOS = [
     "enemy_head_projection_non_crossing",
     "food_near_threat",
     "safe_food_path",
+    "boost_safe_clear_path",
+    "boost_blocked_near_boundary",
+    "boost_blocked_enemy_intercept",
+    "boost_blocked_sharp_turn",
     "telemetry_projected_collision_001",
     "telemetry_enemy_intercept_001",
 ]
@@ -40,6 +44,10 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert data["passed"] is True
         assert "selected_heading" in data
         assert "boost" in data
+        assert "requested_boost" in data
+        assert "final_boost" in data
+        assert "boost_allowed" in data
+        assert "boost_reason" in data
         assert "was_overridden" in data
         assert "reason" in data
         assert "collision_risk" in data

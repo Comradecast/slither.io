@@ -39,6 +39,7 @@ class ScenarioCase:
     expected_override: bool | None = None
     requested_heading: float | None = None
     requested_boost: bool = False
+    expected_final_boost: bool | None = None
     validator: Callable[[dict], bool] | None = None
 
 
@@ -122,6 +123,9 @@ class ScenarioRunner:
                 "reason": reason,
                 "final_angle_deg": math.degrees(safe_angle),
                 "final_boost": safe_boost,
+                "requested_boost": scenario.requested_boost,
+                "boost_allowed": safe_boost if scenario.requested_boost else False,
+                "boost_reason": reason if scenario.requested_boost and not safe_boost else "none",
             },
             "controller": {
                 "action_target_angle_deg": math.degrees(controller_action.target_angle),
@@ -132,6 +136,10 @@ class ScenarioRunner:
             "selected_heading": safe_angle,
             "selected_heading_deg": math.degrees(safe_angle),
             "boost": safe_boost,
+            "requested_boost": scenario.requested_boost,
+            "final_boost": safe_boost,
+            "boost_allowed": safe_boost if scenario.requested_boost else False,
+            "boost_reason": reason if scenario.requested_boost and not safe_boost else "none",
             "was_overridden": overridden,
             "reason": reason,
             "collision_risk": eval_result.collision_risk,
@@ -152,6 +160,8 @@ class ScenarioRunner:
             passed = passed and reason in scenario.expected_gate_reasons
         if scenario.expected_override is not None:
             passed = passed and overridden == scenario.expected_override
+        if scenario.expected_final_boost is not None:
+            passed = passed and safe_boost == scenario.expected_final_boost
         if scenario.validator is not None:
             passed = passed and scenario.validator(result)
         result["passed"] = passed
@@ -337,6 +347,86 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         expected_mode="seek_food",
         expected_gate_reason="none",
         expected_override=False,
+    )
+
+    boost_safe_snake = Snake(1, 0, 0, 0)
+    boost_safe_snake.mass = 100
+    boost_safe_snake.recompute_segments()
+    yield ScenarioCase(
+        name="boost_safe_clear_path",
+        my_snake=boost_safe_snake,
+        snakes=[boost_safe_snake],
+        foods=[],
+        expected_gate_reason="none",
+        expected_override=False,
+        requested_heading=0.0,
+        requested_boost=True,
+        expected_final_boost=True,
+        validator=lambda result: (
+            result["boost_allowed"] is True
+            and result["boost_reason"] == "none"
+        ),
+    )
+
+    boost_boundary_snake = _large_snake(1, Config.WORLD_RADIUS - 100, 0, 0)
+    yield ScenarioCase(
+        name="boost_blocked_near_boundary",
+        my_snake=boost_boundary_snake,
+        snakes=[boost_boundary_snake],
+        foods=[],
+        expected_mode="avoid_boundary",
+        expected_gate_reason="boost_boundary_too_close",
+        expected_override=False,
+        requested_heading=0.0,
+        requested_boost=True,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["boundary_forward_distance"]
+            > result["my_radius"] * 2.0 + (result["my_mass"] / 100.0)
+            and result["boost_reason"] == "boost_boundary_too_close"
+        ),
+    )
+
+    boost_intercept_snake = Snake(1, 0, 0, 0)
+    boost_intercept_snake.angle = math.pi / 2
+    boost_intercept_snake.mass = 100
+    boost_intercept_enemy = Snake(2, 75, 80, math.radians(-90))
+    boost_intercept_enemy.speed = Config.BASE_SPEED
+    boost_intercept_enemy.segments = []
+    yield ScenarioCase(
+        name="boost_blocked_enemy_intercept",
+        my_snake=boost_intercept_snake,
+        snakes=[boost_intercept_snake, boost_intercept_enemy],
+        foods=[],
+        expected_gate_reason="enemy_head_intercept",
+        expected_override=True,
+        requested_heading=0.0,
+        requested_boost=True,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["enemy_head_intercept_risk"] > 1.5
+            and result["boost_reason"] == "enemy_head_intercept"
+        ),
+    )
+
+    boost_turn_snake = Snake(1, 0, 0, 0)
+    boost_turn_snake.mass = 100
+    boost_turn_snake.recompute_segments()
+    yield ScenarioCase(
+        name="boost_blocked_sharp_turn",
+        my_snake=boost_turn_snake,
+        snakes=[boost_turn_snake],
+        foods=[],
+        expected_gate_reason="boost_turn_too_sharp",
+        expected_override=False,
+        requested_heading=math.pi / 2,
+        requested_boost=True,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["boost_reason"] == "boost_turn_too_sharp"
+            and result["collision_risk"] == 0.0
+            and result["enemy_head_intercept_risk"] == 0.0
+        ),
     )
 
     for scenario in build_promoted_telemetry_scenarios():
