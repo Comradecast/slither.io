@@ -52,6 +52,16 @@ class EscapePlan:
     corridor_density: int
     eval_result: EvalResult
 
+
+@dataclass(frozen=True)
+class PartialGuardPlan:
+    cluster: LootCluster
+    target: Vector2
+    side: str
+    reason: str
+    score: float
+    eval_result: EvalResult
+
 class StrategyMode(Enum):
     WANDER = "wander"
     SEEK_FOOD = "seek_food"
@@ -75,6 +85,11 @@ class StrategyResult:
     best_escape_heading: float | None = None
     escape_open_space_score: float | None = None
     anti_coil_escape_active: bool = False
+    partial_guard_active: bool = False
+    partial_guard_target: Vector2 | None = None
+    partial_guard_side: str | None = None
+    partial_guard_reason: str | None = None
+    partial_guard_score: float | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -106,6 +121,12 @@ class Strategy:
     ANTI_COIL_HEADING_SAMPLES = tuple(index * math.pi / 4 for index in range(8))
     ANTI_COIL_DENSITY_PENALTY = 150.0
     ANTI_COIL_BOUNDARY_DISTANCE_WEIGHT = 0.05
+    PARTIAL_GUARD_PRESSURE_RADIUS = 260.0
+    PARTIAL_GUARD_LANE_WIDTH = 120.0
+    PARTIAL_GUARD_OFFSET_DISTANCE = 70.0
+    PARTIAL_GUARD_PROTECTIVE_BONUS = 450.0
+    PARTIAL_GUARD_DIRECT_APPROACH_MARGIN = 75.0
+    PARTIAL_GUARD_DISTANCE_PENALTY = 0.5
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -447,6 +468,147 @@ class Strategy:
         plans.sort(key=lambda item: (item[0], item[1], item[2]))
         return plans[0][3]
 
+    @classmethod
+    def _enemy_pressures_cluster_or_lane(
+        cls,
+        cluster: LootCluster,
+        perception: PerceptionState,
+    ) -> list:
+        pressures = []
+        cluster_dx = cluster.center.x - perception.my_head.x
+        cluster_dy = cluster.center.y - perception.my_head.y
+        cluster_distance = math.hypot(cluster_dx, cluster_dy)
+        if cluster_distance <= 0.0:
+            return pressures
+
+        unit_x = cluster_dx / cluster_distance
+        unit_y = cluster_dy / cluster_distance
+        for enemy in perception.visible_snakes:
+            enemy_to_cluster = enemy.head.distance_to(cluster.center)
+            ex = enemy.head.x - perception.my_head.x
+            ey = enemy.head.y - perception.my_head.y
+            along_lane = ex * unit_x + ey * unit_y
+            lane_perp_distance = abs(-ex * unit_y + ey * unit_x)
+            near_lane = (
+                0.0 <= along_lane <= cluster_distance + cls.PARTIAL_GUARD_PRESSURE_RADIUS
+                and lane_perp_distance <= cls.PARTIAL_GUARD_LANE_WIDTH
+            )
+            if enemy_to_cluster <= cls.PARTIAL_GUARD_PRESSURE_RADIUS or near_lane:
+                pressures.append(enemy)
+
+        pressures.sort(key=lambda enemy: (enemy.head.distance_to(cluster.center), enemy.id))
+        return pressures
+
+    @classmethod
+    def _preferred_guard_side(
+        cls,
+        cluster: LootCluster,
+        perception: PerceptionState,
+        pressures: list,
+    ) -> str:
+        cluster_dx = cluster.center.x - perception.my_head.x
+        cluster_dy = cluster.center.y - perception.my_head.y
+        side_score = 0.0
+        for enemy in pressures:
+            ex = enemy.head.x - perception.my_head.x
+            ey = enemy.head.y - perception.my_head.y
+            cross = cluster_dx * ey - cluster_dy * ex
+            weight = 1.0 / max(1.0, enemy.head.distance_to(cluster.center))
+            side_score += cross * weight
+        return "left" if side_score >= 0.0 else "right"
+
+    def select_partial_guard(
+        self,
+        perception: PerceptionState,
+        best_approach: LootApproach | None = None,
+    ) -> PartialGuardPlan | None:
+        clusters = self.detect_loot_clusters(perception.visible_food)
+        if not clusters:
+            return None
+
+        plans: list[tuple[float, str, PartialGuardPlan]] = []
+        for cluster in clusters:
+            safe_approaches = [
+                candidate
+                for candidate in self.loot_cluster_approach_candidates(cluster, perception)
+                if self._is_safe_target_heading(candidate.target, perception)
+            ]
+            if not safe_approaches:
+                continue
+
+            direct_approach = (
+                best_approach
+                if best_approach is not None and best_approach.cluster is cluster
+                else safe_approaches[0]
+            )
+            if direct_approach.target_kind != "center":
+                continue
+            pressures = self._enemy_pressures_cluster_or_lane(cluster, perception)
+            if not pressures:
+                continue
+
+            dx = direct_approach.target.x - perception.my_head.x
+            dy = direct_approach.target.y - perception.my_head.y
+            distance = math.hypot(dx, dy)
+            if distance <= 0.0:
+                continue
+
+            unit_x = dx / distance
+            unit_y = dy / distance
+            preferred_side = self._preferred_guard_side(cluster, perception, pressures)
+            ordered_sides = (
+                [preferred_side, "right" if preferred_side == "left" else "left"]
+            )
+
+            for side in ordered_sides:
+                side_sign = 1.0 if side == "left" else -1.0
+                guard_target = Vector2(
+                    direct_approach.target.x - unit_y * self.PARTIAL_GUARD_OFFSET_DISTANCE * side_sign,
+                    direct_approach.target.y + unit_x * self.PARTIAL_GUARD_OFFSET_DISTANCE * side_sign,
+                )
+                eval_result = self._evaluate_target_heading(guard_target, perception)
+                if eval_result is None:
+                    continue
+                if (
+                    eval_result.collision_risk > 0.5
+                    or eval_result.open_space_score < 0.15
+                    or eval_result.enemy_head_intercept_risk > 1.5
+                ):
+                    continue
+
+                target_distance = perception.my_head.distance_to(guard_target)
+                protective_bonus = (
+                    self.PARTIAL_GUARD_PROTECTIVE_BONUS
+                    if side == preferred_side
+                    else self.PARTIAL_GUARD_PROTECTIVE_BONUS * 0.5
+                )
+                score = (
+                    direct_approach.score
+                    + protective_bonus
+                    - target_distance * self.PARTIAL_GUARD_DISTANCE_PENALTY
+                )
+                if score < direct_approach.score + self.PARTIAL_GUARD_DIRECT_APPROACH_MARGIN:
+                    continue
+
+                plans.append((
+                    -score,
+                    side,
+                    PartialGuardPlan(
+                        cluster=cluster,
+                        target=guard_target,
+                        side=side,
+                        reason="enemy_pressure_on_loot_lane",
+                        score=score,
+                        eval_result=eval_result,
+                    ),
+                ))
+
+        if not plans:
+            return None
+
+        plans.sort(key=lambda item: (item[0], item[1], item[2].target.x, item[2].target.y))
+        return plans[0][2]
+
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
         
@@ -547,6 +709,24 @@ class Strategy:
             best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
             best_food_score = self.score_food(best_food, perception)
             best_approach = self._best_safe_loot_approach(perception)
+            partial_guard = self.select_partial_guard(perception, best_approach)
+            if partial_guard is not None:
+                return StrategyResult(
+                    mode=StrategyMode.SEEK_FOOD,
+                    target_pos=partial_guard.target,
+                    food_score=best_food_score,
+                    loot_cluster_score=partial_guard.cluster.score,
+                    loot_cluster_total_value=partial_guard.cluster.total_value,
+                    loot_cluster_pellet_count=partial_guard.cluster.pellet_count,
+                    loot_cluster_target=partial_guard.cluster.center,
+                    loot_cluster_target_kind="partial_guard",
+                    loot_cluster_approach=partial_guard.target,
+                    partial_guard_active=True,
+                    partial_guard_target=partial_guard.target,
+                    partial_guard_side=partial_guard.side,
+                    partial_guard_reason=partial_guard.reason,
+                    partial_guard_score=partial_guard.score,
+                )
             if best_approach is not None and best_approach.cluster.score > best_food_score:
                 return StrategyResult(
                     mode=StrategyMode.SEEK_FOOD,

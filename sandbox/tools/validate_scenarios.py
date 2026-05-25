@@ -142,6 +142,20 @@ class ScenarioRunner:
                 "best_escape_heading": strategy_result.best_escape_heading,
                 "escape_open_space_score": strategy_result.escape_open_space_score,
                 "anti_coil_escape_active": strategy_result.anti_coil_escape_active,
+                "partial_guard_active": strategy_result.partial_guard_active,
+                "partial_guard_target_x": (
+                    strategy_result.partial_guard_target.x
+                    if strategy_result.partial_guard_target
+                    else None
+                ),
+                "partial_guard_target_y": (
+                    strategy_result.partial_guard_target.y
+                    if strategy_result.partial_guard_target
+                    else None
+                ),
+                "partial_guard_side": strategy_result.partial_guard_side,
+                "partial_guard_reason": strategy_result.partial_guard_reason,
+                "partial_guard_score": strategy_result.partial_guard_score,
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -207,6 +221,20 @@ class ScenarioRunner:
             "best_escape_heading": strategy_result.best_escape_heading,
             "escape_open_space_score": strategy_result.escape_open_space_score,
             "anti_coil_escape_active": strategy_result.anti_coil_escape_active,
+            "partial_guard_active": strategy_result.partial_guard_active,
+            "partial_guard_target_x": (
+                strategy_result.partial_guard_target.x
+                if strategy_result.partial_guard_target
+                else None
+            ),
+            "partial_guard_target_y": (
+                strategy_result.partial_guard_target.y
+                if strategy_result.partial_guard_target
+                else None
+            ),
+            "partial_guard_side": strategy_result.partial_guard_side,
+            "partial_guard_reason": strategy_result.partial_guard_reason,
+            "partial_guard_score": strategy_result.partial_guard_score,
         })
 
         passed = True
@@ -703,6 +731,116 @@ def build_scenarios() -> Iterable[ScenarioCase]:
             result["anti_coil_escape_active"] is False
             and result["enclosure_sector_count"] < Strategy.ANTI_COIL_MIN_SECTORS
             and result["strategy"]["defensive_reason"] == "Forward danger"
+        ),
+    )
+
+    partial_guard_snake = Snake(1, 0, 0, 0)
+    partial_guard_food = [
+        FoodItem(170, -15, 6.0),
+        FoodItem(190, 0, 5.5),
+        FoodItem(178, 20, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    partial_guard_enemy = Snake(2, 185, 95, 0)
+    partial_guard_enemy.segments = []
+    yield ScenarioCase(
+        name="partial_guard_safe_offset",
+        my_snake=partial_guard_snake,
+        snakes=[partial_guard_snake, partial_guard_enemy],
+        foods=partial_guard_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["partial_guard_active"] is True
+            and result["partial_guard_side"] == "left"
+            and result["loot_cluster_target_kind"] == "partial_guard"
+            and result["strategy"]["target_y"] > result["loot_cluster_target_y"]
+        ),
+    )
+
+    unsafe_guard_snake = Snake(1, 0, 0, 0)
+    unsafe_guard_food = [
+        FoodItem(170, -15, 6.0),
+        FoodItem(190, 0, 5.5),
+        FoodItem(178, 20, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    unsafe_guard_enemy = Snake(2, 185, 95, 0)
+    unsafe_guard_enemy.segments = []
+    unsafe_guard_closer = Snake(3, 120, 130, math.radians(-90))
+    unsafe_guard_closer.speed = Config.BASE_SPEED
+    unsafe_guard_closer.segments = []
+    yield ScenarioCase(
+        name="partial_guard_rejects_unsafe_offset",
+        my_snake=unsafe_guard_snake,
+        snakes=[unsafe_guard_snake, unsafe_guard_enemy, unsafe_guard_closer],
+        foods=unsafe_guard_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        expected_final_boost=False,
+        validator=lambda result: (
+            result["partial_guard_active"] is True
+            and result["partial_guard_side"] == "right"
+            and result["enemy_head_intercept_risk"] == 0.0
+        ),
+    )
+
+    no_pressure_snake = Snake(1, 0, 0, 0)
+    no_pressure_food = [
+        FoodItem(170, -15, 6.0),
+        FoodItem(190, 0, 5.5),
+        FoodItem(178, 20, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    yield ScenarioCase(
+        name="partial_guard_not_when_no_enemy_pressure",
+        my_snake=no_pressure_snake,
+        snakes=[no_pressure_snake],
+        foods=no_pressure_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["partial_guard_active"] is False
+            and result["loot_cluster_target_kind"] == "center"
+        ),
+    )
+
+    anti_coil_guard_snake = Snake(1, 0, 0, 0)
+    anti_coil_guard_enemy = Snake(2, -90, 0, 0)
+    anti_coil_guard_enemy.segments = [
+        Vector2(-90, 0),
+        Vector2(-90, 55),
+        Vector2(-55, 90),
+        Vector2(0, 90),
+        Vector2(55, 90),
+        Vector2(-90, -55),
+        Vector2(-55, -90),
+        Vector2(0, -90),
+        Vector2(55, -90),
+    ]
+    anti_coil_guard_food = [
+        FoodItem(170, -15, 6.0),
+        FoodItem(190, 0, 5.5),
+        FoodItem(178, 20, 5.0),
+    ]
+    anti_coil_guard_pressure = Snake(3, 185, 95, 0)
+    anti_coil_guard_pressure.segments = []
+    yield ScenarioCase(
+        name="partial_guard_not_during_anti_coil_escape",
+        my_snake=anti_coil_guard_snake,
+        snakes=[anti_coil_guard_snake, anti_coil_guard_enemy, anti_coil_guard_pressure],
+        foods=anti_coil_guard_food,
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["anti_coil_escape_active"] is True
+            and result["partial_guard_active"] is False
+            and result["strategy"]["defensive_reason"] == "Anti-coil escape"
         ),
     )
 

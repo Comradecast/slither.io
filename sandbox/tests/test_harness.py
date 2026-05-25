@@ -27,6 +27,10 @@ EXPECTED_SCENARIOS = [
     "anti_coil_escape_open_gap",
     "anti_coil_escape_rejects_closing_gap",
     "anti_coil_no_false_positive_open_space",
+    "partial_guard_safe_offset",
+    "partial_guard_rejects_unsafe_offset",
+    "partial_guard_not_when_no_enemy_pressure",
+    "partial_guard_not_during_anti_coil_escape",
     "telemetry_projected_collision_001",
     "telemetry_enemy_intercept_001",
 ]
@@ -79,6 +83,12 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "best_escape_heading" in data
         assert "escape_open_space_score" in data
         assert "anti_coil_escape_active" in data
+        assert "partial_guard_active" in data
+        assert "partial_guard_target_x" in data
+        assert "partial_guard_target_y" in data
+        assert "partial_guard_side" in data
+        assert "partial_guard_reason" in data
+        assert "partial_guard_score" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):
