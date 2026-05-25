@@ -11,6 +11,7 @@ class EvalResult:
     collision_risk: float = 0.0
     open_space_score: float = 1.0
     enemy_head_intercept_risk: float = 0.0
+    boundary_forward_distance: float | None = None
 
 class StrategyMode(Enum):
     WANDER = "wander"
@@ -37,6 +38,30 @@ class Strategy:
     
     def __init__(self, profile="default"):
         self.profile = profile
+
+    @staticmethod
+    def boundary_distance_along_heading(head: Vector2, heading: float) -> float:
+        """Return forward distance from head to the circular world boundary."""
+        ray_dx = math.cos(heading)
+        ray_dy = math.sin(heading)
+        return Strategy.boundary_distance_along_ray(head, ray_dx, ray_dy)
+
+    @staticmethod
+    def boundary_distance_along_ray(head: Vector2, ray_dx: float, ray_dy: float) -> float:
+        ray_length = math.hypot(ray_dx, ray_dy)
+        if ray_length <= 0.0:
+            return 0.0
+
+        unit_dx = ray_dx / ray_length
+        unit_dy = ray_dy / ray_length
+        projection = head.x * unit_dx + head.y * unit_dy
+        distance_from_center_sq = head.x * head.x + head.y * head.y
+        radius_sq = Config.WORLD_RADIUS * Config.WORLD_RADIUS
+        discriminant = projection * projection + radius_sq - distance_from_center_sq
+        if discriminant <= 0.0:
+            return 0.0
+
+        return max(0.0, -projection + math.sqrt(discriminant))
 
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
@@ -87,9 +112,14 @@ class Strategy:
                     if abs(my_time - enemy_time) < 0.5 or my_time > enemy_time:
                         res.enemy_head_intercept_risk = 2.0
         
-        # 3. Check boundaries
-        # Requirement: If a heading does not provide enough open distance for the bot to turn safely, mark it risky
-        if perception.boundary_distance < min_turn_radius:
+        # 3. Check heading-aware boundary space
+        boundary_forward_distance = self.boundary_distance_along_ray(
+            perception.my_head,
+            ray_dx,
+            ray_dy,
+        )
+        res.boundary_forward_distance = boundary_forward_distance
+        if boundary_forward_distance < min_turn_radius:
             res.open_space_score = 0.1
             
         return res

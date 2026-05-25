@@ -8,6 +8,7 @@ from sandbox.bot.perception import Perception, PerceivedThreat, PerceivedSnake
 from sandbox.bot.strategy import Strategy, StrategyMode
 from sandbox.bot.steering import Steering
 from sandbox.bot.controller import BotController
+from sandbox.bot.safety_gate import SafetyGate
 
 def test_perception_includes_snake_state():
     s = Snake(1, 100, 200, 1.5)
@@ -92,6 +93,58 @@ def test_strategy_boundary_avoidance_priority():
     # Boundary avoidance must take priority over threat avoidance
     assert result.mode == StrategyMode.AVOID_BOUNDARY
     assert result.defensive_reason == "Boundary proximity"
+
+
+def test_boundary_distance_from_center_is_world_radius_in_any_heading():
+    head = Vector2(0, 0)
+
+    assert Strategy.boundary_distance_along_heading(head, 0.0) == pytest.approx(Config.WORLD_RADIUS)
+    assert Strategy.boundary_distance_along_heading(head, math.pi / 2) == pytest.approx(Config.WORLD_RADIUS)
+    assert Strategy.boundary_distance_along_heading(head, math.radians(217)) == pytest.approx(Config.WORLD_RADIUS)
+
+
+def test_boundary_distance_near_east_boundary_heading_east_is_short():
+    head = Vector2(Config.WORLD_RADIUS - 60, 0)
+
+    distance = Strategy.boundary_distance_along_heading(head, 0.0)
+
+    assert distance == pytest.approx(60.0)
+
+
+def test_boundary_distance_near_east_boundary_heading_west_is_long():
+    head = Vector2(Config.WORLD_RADIUS - 60, 0)
+
+    distance = Strategy.boundary_distance_along_heading(head, math.pi)
+
+    assert distance == pytest.approx((Config.WORLD_RADIUS * 2.0) - 60.0)
+
+
+def test_safety_gate_overrides_wall_facing_boundary_heading():
+    s = Snake(1, Config.WORLD_RADIUS - 60, 0, 0)
+    s.mass = 5000
+    s.recompute_segments()
+    state = Perception(vision_radius=100).build(s, [s], [])
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(state, 0.0, True)
+
+    assert overridden is True
+    assert reason == "boundary_too_close"
+    assert safe_boost is False
+    assert safe_angle == pytest.approx(math.pi)
+
+
+def test_safety_gate_allows_escape_boundary_heading():
+    s = Snake(1, Config.WORLD_RADIUS - 60, 0, math.pi)
+    s.mass = 5000
+    s.recompute_segments()
+    state = Perception(vision_radius=100).build(s, [s], [])
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(state, math.pi, True)
+
+    assert overridden is False
+    assert reason == "none"
+    assert safe_boost is True
+    assert safe_angle == pytest.approx(math.pi)
 
 def test_strategy_threat_avoidance():
     # Safe from boundary, but near enemy

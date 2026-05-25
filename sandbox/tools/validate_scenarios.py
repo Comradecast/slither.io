@@ -131,6 +131,7 @@ class ScenarioRunner:
             "reason": reason,
             "collision_risk": eval_result.collision_risk,
             "enemy_head_intercept_risk": eval_result.enemy_head_intercept_risk,
+            "boundary_forward_distance": eval_result.boundary_forward_distance,
             "my_radius": state.my_radius,
             "my_mass": state.my_mass,
         })
@@ -181,14 +182,34 @@ def build_scenarios() -> Iterable[ScenarioCase]:
 
     boundary_snake = _large_snake(1, Config.WORLD_RADIUS - 60, 0, 0)
     yield ScenarioCase(
-        name="large_snake_near_boundary",
+        name="large_snake_near_boundary_wall_facing",
         my_snake=boundary_snake,
         snakes=[boundary_snake],
         foods=[],
         expected_mode="avoid_boundary",
-        expected_gate_reasons={"boundary_too_close", "projected_collision"},
+        expected_gate_reason="boundary_too_close",
         expected_override=True,
         requested_heading=0.0,
+        validator=lambda result: (
+            result["boundary_forward_distance"]
+            < result["my_radius"] * 2.0 + (result["my_mass"] / 100.0)
+        ),
+    )
+
+    escape_boundary_snake = _large_snake(1, Config.WORLD_RADIUS - 60, 0, math.pi)
+    yield ScenarioCase(
+        name="large_snake_near_boundary_escape_heading",
+        my_snake=escape_boundary_snake,
+        snakes=[escape_boundary_snake],
+        foods=[],
+        expected_mode="avoid_boundary",
+        expected_gate_reason="none",
+        expected_override=False,
+        requested_heading=math.pi,
+        validator=lambda result: (
+            result["boundary_forward_distance"]
+            > result["my_radius"] * 2.0 + (result["my_mass"] / 100.0)
+        ),
     )
 
     intercept_snake = Snake(1, 0, 0, 0)
