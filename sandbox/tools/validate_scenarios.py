@@ -137,6 +137,11 @@ class ScenarioRunner:
                     if strategy_result.loot_cluster_approach
                     else None
                 ),
+                "compression_risk": strategy_result.compression_risk,
+                "enclosure_sector_count": strategy_result.enclosure_sector_count,
+                "best_escape_heading": strategy_result.best_escape_heading,
+                "escape_open_space_score": strategy_result.escape_open_space_score,
+                "anti_coil_escape_active": strategy_result.anti_coil_escape_active,
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -197,6 +202,11 @@ class ScenarioRunner:
                 if strategy_result.loot_cluster_approach
                 else None
             ),
+            "compression_risk": strategy_result.compression_risk,
+            "enclosure_sector_count": strategy_result.enclosure_sector_count,
+            "best_escape_heading": strategy_result.best_escape_heading,
+            "escape_open_space_score": strategy_result.escape_open_space_score,
+            "anti_coil_escape_active": strategy_result.anti_coil_escape_active,
         })
 
         passed = True
@@ -612,6 +622,87 @@ def build_scenarios() -> Iterable[ScenarioCase]:
             result["boost_reason"] == "boost_turn_too_sharp"
             and result["collision_risk"] == 0.0
             and result["enemy_head_intercept_risk"] == 0.0
+        ),
+    )
+
+    anti_coil_snake = Snake(1, 0, 0, 0)
+    anti_coil_enemy = Snake(2, -90, 0, 0)
+    anti_coil_enemy.segments = [
+        Vector2(-90, 0),
+        Vector2(-90, 55),
+        Vector2(-55, 90),
+        Vector2(0, 90),
+        Vector2(55, 90),
+        Vector2(-90, -55),
+        Vector2(-55, -90),
+        Vector2(0, -90),
+        Vector2(55, -90),
+    ]
+    yield ScenarioCase(
+        name="anti_coil_escape_open_gap",
+        my_snake=anti_coil_snake,
+        snakes=[anti_coil_snake, anti_coil_enemy],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["anti_coil_escape_active"] is True
+            and result["best_escape_heading"] == 0.0
+            and result["strategy"]["defensive_reason"] == "Anti-coil escape"
+            and abs(result["selected_heading_deg"]) < 1.0
+        ),
+    )
+
+    closing_gap_snake = Snake(1, 0, 0, 0)
+    closing_gap_enemy = Snake(2, -90, 0, 0)
+    closing_gap_enemy.segments = [
+        Vector2(-90, 0),
+        Vector2(-90, 55),
+        Vector2(-55, 90),
+        Vector2(0, 90),
+        Vector2(55, 90),
+        Vector2(-90, -55),
+        Vector2(-55, -90),
+        Vector2(0, -90),
+    ]
+    closing_gap_head = Snake(3, 75, 80, math.radians(-90))
+    closing_gap_head.speed = Config.BASE_SPEED
+    closing_gap_head.segments = []
+    yield ScenarioCase(
+        name="anti_coil_escape_rejects_closing_gap",
+        my_snake=closing_gap_snake,
+        snakes=[closing_gap_snake, closing_gap_enemy, closing_gap_head],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["anti_coil_escape_active"] is True
+            and result["best_escape_heading"] != 0.0
+            and result["enemy_head_intercept_risk"] == 0.0
+            and result["strategy"]["defensive_reason"] == "Anti-coil escape"
+        ),
+    )
+
+    open_space_snake = Snake(1, 0, 0, 0)
+    open_space_enemy = Snake(2, 60, 0, 0)
+    open_space_enemy.segments = [
+        Vector2(60, 0),
+        Vector2(75, 12),
+    ]
+    yield ScenarioCase(
+        name="anti_coil_no_false_positive_open_space",
+        my_snake=open_space_snake,
+        snakes=[open_space_snake, open_space_enemy],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["anti_coil_escape_active"] is False
+            and result["enclosure_sector_count"] < Strategy.ANTI_COIL_MIN_SECTORS
+            and result["strategy"]["defensive_reason"] == "Forward danger"
         ),
     )
 

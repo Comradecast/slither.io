@@ -19,6 +19,11 @@ class Steering:
             return SteeringResult(heading=math.atan2(dy, dx))
             
         elif strategy_res.mode == StrategyMode.AVOID_THREAT and strategy_res.target_pos:
+            if strategy_res.defensive_reason == "Anti-coil escape":
+                dx = strategy_res.target_pos.x - perception.my_head.x
+                dy = strategy_res.target_pos.y - perception.my_head.y
+                return SteeringResult(heading=math.atan2(dy, dx))
+
             # Smooth defensive steering (steer perpendicular to the threat rather than 180 hard turn)
             angle_to_threat = math.atan2(strategy_res.target_pos.y - perception.my_head.y, 
                                          strategy_res.target_pos.x - perception.my_head.x)

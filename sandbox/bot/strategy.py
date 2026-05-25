@@ -35,6 +35,23 @@ class LootApproach:
     target_kind: str
     score: float
 
+
+@dataclass(frozen=True)
+class CompressionAnalysis:
+    risk: float
+    sector_count: int
+    nearby_threat_count: int
+    active: bool
+
+
+@dataclass(frozen=True)
+class EscapePlan:
+    heading: float
+    target: Vector2
+    open_space_score: float
+    corridor_density: int
+    eval_result: EvalResult
+
 class StrategyMode(Enum):
     WANDER = "wander"
     SEEK_FOOD = "seek_food"
@@ -53,6 +70,11 @@ class StrategyResult:
     loot_cluster_target: Vector2 | None = None
     loot_cluster_target_kind: str | None = None
     loot_cluster_approach: Vector2 | None = None
+    compression_risk: float | None = None
+    enclosure_sector_count: int | None = None
+    best_escape_heading: float | None = None
+    escape_open_space_score: float | None = None
+    anti_coil_escape_active: bool = False
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -74,6 +96,16 @@ class Strategy:
     LOOT_CLUSTER_AVERAGE_DISTANCE_PENALTY = 0.25
     LOOT_CLUSTER_CENTER_APPROACH_BONUS = 1000.0
     LOOT_CLUSTER_HIGH_VALUE_APPROACH_BONUS = 25.0
+    ANTI_COIL_DETECTION_RADIUS = 180.0
+    ANTI_COIL_SECTOR_COUNT = 8
+    ANTI_COIL_MIN_THREATS = 5
+    ANTI_COIL_MIN_SECTORS = 4
+    ANTI_COIL_ESCAPE_DISTANCE = 180.0
+    ANTI_COIL_CORRIDOR_DISTANCE = 220.0
+    ANTI_COIL_CORRIDOR_HALF_ANGLE = math.pi / 6
+    ANTI_COIL_HEADING_SAMPLES = tuple(index * math.pi / 4 for index in range(8))
+    ANTI_COIL_DENSITY_PENALTY = 150.0
+    ANTI_COIL_BOUNDARY_DISTANCE_WEIGHT = 0.05
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -300,6 +332,121 @@ class Strategy:
                     return candidate
         return None
 
+    @staticmethod
+    def _normalize_angle(angle: float) -> float:
+        return (angle + math.pi) % (2 * math.pi) - math.pi
+
+    @classmethod
+    def analyze_compression(cls, perception: PerceptionState) -> CompressionAnalysis:
+        nearby_threats = [
+            threat
+            for threat in perception.visible_threats
+            if threat.distance <= cls.ANTI_COIL_DETECTION_RADIUS
+        ]
+        sectors: set[int] = set()
+        sector_width = (2 * math.pi) / cls.ANTI_COIL_SECTOR_COUNT
+        for threat in nearby_threats:
+            angle = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            )
+            normalized_angle = angle % (2 * math.pi)
+            sectors.add(int(normalized_angle / sector_width))
+
+        nearby_count = len(nearby_threats)
+        sector_count = len(sectors)
+        threat_ratio = nearby_count / cls.ANTI_COIL_MIN_THREATS
+        sector_ratio = sector_count / cls.ANTI_COIL_MIN_SECTORS
+        risk = min(threat_ratio, sector_ratio)
+        active = (
+            nearby_count >= cls.ANTI_COIL_MIN_THREATS
+            and sector_count >= cls.ANTI_COIL_MIN_SECTORS
+        )
+        return CompressionAnalysis(
+            risk=risk,
+            sector_count=sector_count,
+            nearby_threat_count=nearby_count,
+            active=active,
+        )
+
+    @classmethod
+    def _heading_corridor_density(
+        cls,
+        heading: float,
+        perception: PerceptionState,
+    ) -> int:
+        density = 0
+        for threat in perception.visible_threats:
+            if threat.distance > cls.ANTI_COIL_CORRIDOR_DISTANCE:
+                continue
+            angle_to_threat = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            )
+            if abs(cls._normalize_angle(angle_to_threat - heading)) <= cls.ANTI_COIL_CORRIDOR_HALF_ANGLE:
+                density += 1
+        return density
+
+    def select_anti_coil_escape(
+        self,
+        perception: PerceptionState,
+        analysis: CompressionAnalysis | None = None,
+    ) -> EscapePlan | None:
+        analysis = analysis or self.analyze_compression(perception)
+        if not analysis.active:
+            return None
+
+        min_turn_radius = perception.my_radius * 2.0 + (perception.my_mass / 100.0)
+        plans: list[tuple[float, float, float, EscapePlan]] = []
+        for heading in self.ANTI_COIL_HEADING_SAMPLES:
+            ray_dx = math.cos(heading)
+            ray_dy = math.sin(heading)
+            eval_result = self._evaluate_heading(
+                heading,
+                ray_dx,
+                ray_dy,
+                perception,
+                min_turn_radius,
+            )
+            if (
+                eval_result.collision_risk > 0.5
+                or eval_result.open_space_score < 0.15
+                or eval_result.enemy_head_intercept_risk > 1.5
+            ):
+                continue
+
+            density = self._heading_corridor_density(heading, perception)
+            open_space_score = eval_result.open_space_score / (1 + density)
+            boundary_distance = eval_result.boundary_forward_distance or 0.0
+            score = (
+                open_space_score * 1000.0
+                + min(boundary_distance, self.ANTI_COIL_CORRIDOR_DISTANCE)
+                * self.ANTI_COIL_BOUNDARY_DISTANCE_WEIGHT
+                - density * self.ANTI_COIL_DENSITY_PENALTY
+            )
+            target = Vector2(
+                perception.my_head.x + ray_dx * self.ANTI_COIL_ESCAPE_DISTANCE,
+                perception.my_head.y + ray_dy * self.ANTI_COIL_ESCAPE_DISTANCE,
+            )
+            plans.append((
+                -score,
+                abs(self._normalize_angle(heading - perception.my_angle)),
+                heading,
+                EscapePlan(
+                    heading=heading,
+                    target=target,
+                    open_space_score=open_space_score,
+                    corridor_density=density,
+                    eval_result=eval_result,
+                ),
+            ))
+
+        if not plans:
+            return None
+
+        plans.sort(key=lambda item: (item[0], item[1], item[2]))
+        return plans[0][3]
+
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
         
@@ -367,14 +514,35 @@ class Strategy:
         # 1. Boundary avoidance is highest priority
         if perception.boundary_distance < perception.my_radius * 10:
             return StrategyResult(mode=StrategyMode.AVOID_BOUNDARY, target_pos=Vector2(0, 0), defensive_reason="Boundary proximity")
-            
-        # 2. Threat avoidance (using highest scored threat)
+
+        # 2. Anti-coil escape: choose a safe gap before compression becomes a closed cage.
+        compression = self.analyze_compression(perception)
+        escape_plan = self.select_anti_coil_escape(perception, compression)
+        if escape_plan is not None:
+            return StrategyResult(
+                mode=StrategyMode.AVOID_THREAT,
+                target_pos=escape_plan.target,
+                defensive_reason="Anti-coil escape",
+                compression_risk=compression.risk,
+                enclosure_sector_count=compression.sector_count,
+                best_escape_heading=escape_plan.heading,
+                escape_open_space_score=escape_plan.open_space_score,
+                anti_coil_escape_active=True,
+            )
+
+        # 3. Threat avoidance (using highest scored threat)
         if perception.highest_threat is not None:
             # target_pos is the threat we want to avoid
             reason = "Forward danger" if perception.highest_threat.in_forward_cone else "Nearby body segment"
-            return StrategyResult(mode=StrategyMode.AVOID_THREAT, target_pos=perception.highest_threat.pos, defensive_reason=reason)
-            
-        # 3. Seek food if safe
+            return StrategyResult(
+                mode=StrategyMode.AVOID_THREAT,
+                target_pos=perception.highest_threat.pos,
+                defensive_reason=reason,
+                compression_risk=compression.risk,
+                enclosure_sector_count=compression.sector_count,
+            )
+
+        # 4. Seek food if safe
         if perception.visible_food:
             best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
             best_food_score = self.score_food(best_food, perception)
@@ -397,7 +565,7 @@ class Strategy:
                 food_score=best_food_score,
             )
             
-        # 4. Default: wander
+        # 5. Default: wander
         return StrategyResult(mode=StrategyMode.WANDER, target_pos=None)
 
     def score_food(self, food, perception: PerceptionState) -> float:

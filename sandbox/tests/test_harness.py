@@ -24,6 +24,9 @@ EXPECTED_SCENARIOS = [
     "boost_blocked_near_boundary",
     "boost_blocked_enemy_intercept",
     "boost_blocked_sharp_turn",
+    "anti_coil_escape_open_gap",
+    "anti_coil_escape_rejects_closing_gap",
+    "anti_coil_no_false_positive_open_space",
     "telemetry_projected_collision_001",
     "telemetry_enemy_intercept_001",
 ]
@@ -71,6 +74,11 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "loot_cluster_target_kind" in data
         assert "loot_cluster_approach_x" in data
         assert "loot_cluster_approach_y" in data
+        assert "compression_risk" in data
+        assert "enclosure_sector_count" in data
+        assert "best_escape_heading" in data
+        assert "escape_open_space_score" in data
+        assert "anti_coil_escape_active" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):
