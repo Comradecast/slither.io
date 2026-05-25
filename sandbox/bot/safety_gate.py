@@ -1,12 +1,14 @@
 import math
 from sandbox.config import Config
 from sandbox.bot.strategy import Strategy
+from sandbox.bot.steering import Steering
 from sandbox.bot.perception import PerceptionState
 
 class SafetyGate:
     def __init__(self):
         # We use the safety_first profile for the override logic
         self.strategy = Strategy("safety_first")
+        self.steering = Steering()
         
     def filter_action(self, perception_state: PerceptionState, requested_angle: float, requested_boost: bool) -> tuple[float, bool, bool, str]:
         """
@@ -42,7 +44,8 @@ class SafetyGate:
         if is_unsafe:
             # Get safe heading
             strategy_result = self.strategy.decide(perception_state)
+            steering_result = self.steering.compute(strategy_result, perception_state)
             # Disable boost to prioritize turning tight
-            return strategy_result.selected_heading, False, True, reason
+            return steering_result.heading, False, True, reason
             
         return requested_angle, requested_boost, False, "none"
