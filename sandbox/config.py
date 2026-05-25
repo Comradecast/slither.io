@@ -30,6 +30,14 @@ class Config:
     BASE_RADIUS: float = 6.0             # Head collision radius at scale=1
     RADIUS_SCALE_FACTOR: float = 2.0     # Additional radius per unit of scale
 
+    @classmethod
+    def get_radius(cls, mass: float) -> float:
+        """Calculate dynamic radius based on mass, matching snake scaling logic."""
+        target_segments = cls.INITIAL_SEGMENTS + int((mass - cls.INITIAL_MASS) / cls.MASS_PER_SEGMENT)
+        segs = max(cls.INITIAL_SEGMENTS, target_segments)
+        sc = min(cls.MAX_SCALE, 1 + (segs - 2) / cls.SCALE_FORMULA_DIVISOR)
+        return cls.BASE_RADIUS + (sc - 1) * cls.RADIUS_SCALE_FACTOR
+
     # ── Snake: Boost ─────────────────────────────────────────────────────
     BOOST_MASS_COST: float = 15.0         # Mass lost per second while boosting
     BOOST_PELLET_RATE: float = 6.0        # Boost-trail pellets dropped per second

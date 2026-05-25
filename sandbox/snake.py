@@ -25,7 +25,7 @@ class Snake:
             
         self.speed = Config.BASE_SPEED
         self.turn_rate = Config.BASE_TURN_RATE
-        self.radius = Config.BASE_RADIUS
+        self.radius = Config.get_radius(self.mass)
         
         self.recompute_segments()
 
@@ -74,6 +74,7 @@ class Snake:
     def recompute_segments(self):
         target_segments = Config.INITIAL_SEGMENTS + int((self.mass - Config.INITIAL_MASS) / Config.MASS_PER_SEGMENT)
         self.segment_count = max(Config.INITIAL_SEGMENTS, target_segments)
+        self.radius = Config.get_radius(self.mass)
 
         self.segments = []
         trail_len = len(self.trail)

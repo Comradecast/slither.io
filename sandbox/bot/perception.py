@@ -18,6 +18,8 @@ class PerceivedSnake:
     head: Vector2
     mass: float
     distance: float
+    radius: float
+    speed: float = Config.BASE_SPEED
 
 @dataclass
 class PerceivedThreat:
@@ -27,6 +29,7 @@ class PerceivedThreat:
     score: float
     angle_diff: float
     in_forward_cone: bool
+    radius: float
     segment_index: int | None = None
 
 @dataclass
@@ -37,6 +40,7 @@ class PerceptionState:
     my_angle: float
     my_mass: float
     my_speed: float
+    my_radius: float
     boundary_distance: float
     visible_food: list[PerceivedFood] = field(default_factory=list)
     visible_snakes: list[PerceivedSnake] = field(default_factory=list)
@@ -85,7 +89,14 @@ class Perception:
                 
             dist_to_head = my_snake.pos.distance_to(s.pos)
             if dist_to_head <= self.vision_radius:
-                visible_snakes.append(PerceivedSnake(s.id, s.pos.copy(), s.mass, dist_to_head))
+                visible_snakes.append(PerceivedSnake(
+                    id=s.id, 
+                    head=s.pos.copy(), 
+                    mass=s.mass, 
+                    distance=dist_to_head, 
+                    radius=Config.get_radius(s.mass),
+                    speed=s.speed
+                ))
                 
             # Treat enemy segments as threats
             for i, segment in enumerate(s.segments):
@@ -110,6 +121,7 @@ class Perception:
                         score=score,
                         angle_diff=angle_diff,
                         in_forward_cone=in_forward_cone,
+                        radius=Config.get_radius(s.mass),
                         segment_index=i
                     ))
                     
@@ -128,6 +140,7 @@ class Perception:
             my_angle=my_snake.angle,
             my_mass=my_snake.mass,
             my_speed=my_snake.speed,
+            my_radius=Config.get_radius(my_snake.mass),
             boundary_distance=boundary_distance,
             visible_food=visible_food,
             visible_snakes=visible_snakes,
