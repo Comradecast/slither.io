@@ -14,6 +14,9 @@ EXPECTED_SCENARIOS = [
     "enemy_head_projection_non_crossing",
     "food_near_threat",
     "safe_food_path",
+    "loot_cluster_safe_preferred",
+    "loot_cluster_unsafe_rejected",
+    "normal_food_without_cluster",
     "boost_safe_clear_path",
     "boost_blocked_near_boundary",
     "boost_blocked_enemy_intercept",
@@ -57,6 +60,11 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "enemy_head_intercept_distance" in data
         assert "my_radius" in data
         assert "my_mass" in data
+        assert "loot_cluster_score" in data
+        assert "loot_cluster_total_value" in data
+        assert "loot_cluster_pellet_count" in data
+        assert "loot_cluster_target_x" in data
+        assert "loot_cluster_target_y" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):

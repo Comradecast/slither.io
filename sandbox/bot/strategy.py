@@ -15,6 +15,18 @@ class EvalResult:
     enemy_head_intercept_time: float | None = None
     enemy_head_intercept_distance: float | None = None
 
+
+@dataclass
+class LootCluster:
+    foods: list
+    total_value: float
+    pellet_count: int
+    center: Vector2
+    nearest_distance: float
+    average_distance: float
+    high_value_pellet_count: int
+    score: float
+
 class StrategyMode(Enum):
     WANDER = "wander"
     SEEK_FOOD = "seek_food"
@@ -27,6 +39,10 @@ class StrategyResult:
     target_pos: Vector2 | None = None
     defensive_reason: str | None = None
     food_score: float | None = None
+    loot_cluster_score: float | None = None
+    loot_cluster_total_value: float | None = None
+    loot_cluster_pellet_count: int | None = None
+    loot_cluster_target: Vector2 | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -38,6 +54,14 @@ class Strategy:
     FOOD_THREAT_PENALTY = 250.0
     FOOD_BLOCKED_BY_THREAT_PENALTY = 200.0
     ENEMY_PROJECTION_SAMPLE_TIMES = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0)
+    LOOT_CLUSTER_DISTANCE = 60.0
+    LOOT_CLUSTER_TOTAL_VALUE_THRESHOLD = 15.0
+    LOOT_CLUSTER_HIGH_VALUE_THRESHOLD = 5.0
+    LOOT_CLUSTER_HIGH_VALUE_COUNT_THRESHOLD = 3
+    LOOT_CLUSTER_MIN_PELLETS = 3
+    LOOT_CLUSTER_COUNT_BONUS = 20.0
+    LOOT_CLUSTER_NEAREST_DISTANCE_PENALTY = 0.75
+    LOOT_CLUSTER_AVERAGE_DISTANCE_PENALTY = 0.25
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -86,6 +110,126 @@ class Strategy:
             )
             for sample_time in sample_times
         ]
+
+    @classmethod
+    def detect_loot_clusters(cls, visible_food: list) -> list[LootCluster]:
+        ordered_food = sorted(
+            visible_food,
+            key=lambda food: (food.pos.x, food.pos.y, food.value, food.distance),
+        )
+        visited: set[int] = set()
+        clusters: list[LootCluster] = []
+
+        for start_index, _ in enumerate(ordered_food):
+            if start_index in visited:
+                continue
+
+            group_indexes = []
+            pending = [start_index]
+            visited.add(start_index)
+            while pending:
+                current_index = pending.pop()
+                current_food = ordered_food[current_index]
+                group_indexes.append(current_index)
+
+                for candidate_index, candidate_food in enumerate(ordered_food):
+                    if candidate_index in visited:
+                        continue
+                    if (
+                        current_food.pos.distance_to(candidate_food.pos)
+                        <= cls.LOOT_CLUSTER_DISTANCE
+                    ):
+                        visited.add(candidate_index)
+                        pending.append(candidate_index)
+
+            foods = [ordered_food[index] for index in group_indexes]
+            if not cls._is_high_value_cluster(foods):
+                continue
+
+            clusters.append(cls._build_loot_cluster(foods))
+
+        clusters.sort(
+            key=lambda cluster: (
+                -cluster.score,
+                cluster.nearest_distance,
+                cluster.center.x,
+                cluster.center.y,
+            )
+        )
+        return clusters
+
+    @classmethod
+    def _is_high_value_cluster(cls, foods: list) -> bool:
+        if len(foods) < cls.LOOT_CLUSTER_MIN_PELLETS:
+            return False
+
+        total_value = sum(food.value for food in foods)
+        high_value_count = sum(
+            1
+            for food in foods
+            if food.value >= cls.LOOT_CLUSTER_HIGH_VALUE_THRESHOLD
+        )
+        return (
+            total_value >= cls.LOOT_CLUSTER_TOTAL_VALUE_THRESHOLD
+            or high_value_count >= cls.LOOT_CLUSTER_HIGH_VALUE_COUNT_THRESHOLD
+        )
+
+    @classmethod
+    def _build_loot_cluster(cls, foods: list) -> LootCluster:
+        total_value = sum(food.value for food in foods)
+        weighted_x = sum(food.pos.x * food.value for food in foods) / total_value
+        weighted_y = sum(food.pos.y * food.value for food in foods) / total_value
+        nearest_distance = min(food.distance for food in foods)
+        average_distance = sum(food.distance for food in foods) / len(foods)
+        high_value_count = sum(
+            1
+            for food in foods
+            if food.value >= cls.LOOT_CLUSTER_HIGH_VALUE_THRESHOLD
+        )
+        score = (
+            total_value * cls.FOOD_VALUE_WEIGHT
+            + len(foods) * cls.LOOT_CLUSTER_COUNT_BONUS
+            - nearest_distance * cls.LOOT_CLUSTER_NEAREST_DISTANCE_PENALTY
+            - average_distance * cls.LOOT_CLUSTER_AVERAGE_DISTANCE_PENALTY
+        )
+        return LootCluster(
+            foods=foods,
+            total_value=total_value,
+            pellet_count=len(foods),
+            center=Vector2(weighted_x, weighted_y),
+            nearest_distance=nearest_distance,
+            average_distance=average_distance,
+            high_value_pellet_count=high_value_count,
+            score=score,
+        )
+
+    def _is_safe_target_heading(self, target_pos: Vector2, perception: PerceptionState) -> bool:
+        dx = target_pos.x - perception.my_head.x
+        dy = target_pos.y - perception.my_head.y
+        distance = math.hypot(dx, dy)
+        if distance <= 0.0:
+            return False
+
+        requested_angle = math.atan2(dy, dx)
+        min_turn_radius = perception.my_radius * 2.0 + (perception.my_mass / 100.0)
+        eval_result = self._evaluate_heading(
+            requested_angle,
+            dx / distance,
+            dy / distance,
+            perception,
+            min_turn_radius,
+        )
+        return (
+            eval_result.collision_risk <= 0.5
+            and eval_result.open_space_score >= 0.15
+            and eval_result.enemy_head_intercept_risk <= 1.5
+        )
+
+    def _best_safe_loot_cluster(self, perception: PerceptionState) -> LootCluster | None:
+        for cluster in self.detect_loot_clusters(perception.visible_food):
+            if self._is_safe_target_heading(cluster.center, perception):
+                return cluster
+        return None
 
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
@@ -164,10 +308,22 @@ class Strategy:
         # 3. Seek food if safe
         if perception.visible_food:
             best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
+            best_food_score = self.score_food(best_food, perception)
+            best_cluster = self._best_safe_loot_cluster(perception)
+            if best_cluster is not None and best_cluster.score > best_food_score:
+                return StrategyResult(
+                    mode=StrategyMode.SEEK_FOOD,
+                    target_pos=best_cluster.center,
+                    food_score=best_food_score,
+                    loot_cluster_score=best_cluster.score,
+                    loot_cluster_total_value=best_cluster.total_value,
+                    loot_cluster_pellet_count=best_cluster.pellet_count,
+                    loot_cluster_target=best_cluster.center,
+                )
             return StrategyResult(
                 mode=StrategyMode.SEEK_FOOD,
                 target_pos=best_food.pos,
-                food_score=self.score_food(best_food, perception),
+                food_score=best_food_score,
             )
             
         # 4. Default: wander

@@ -113,6 +113,19 @@ class ScenarioRunner:
                 "target_y": strategy_result.target_pos.y if strategy_result.target_pos else None,
                 "defensive_reason": strategy_result.defensive_reason,
                 "food_score": strategy_result.food_score,
+                "loot_cluster_score": strategy_result.loot_cluster_score,
+                "loot_cluster_total_value": strategy_result.loot_cluster_total_value,
+                "loot_cluster_pellet_count": strategy_result.loot_cluster_pellet_count,
+                "loot_cluster_target_x": (
+                    strategy_result.loot_cluster_target.x
+                    if strategy_result.loot_cluster_target
+                    else None
+                ),
+                "loot_cluster_target_y": (
+                    strategy_result.loot_cluster_target.y
+                    if strategy_result.loot_cluster_target
+                    else None
+                ),
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -149,6 +162,19 @@ class ScenarioRunner:
             "enemy_head_intercept_distance": eval_result.enemy_head_intercept_distance,
             "my_radius": state.my_radius,
             "my_mass": state.my_mass,
+            "loot_cluster_score": strategy_result.loot_cluster_score,
+            "loot_cluster_total_value": strategy_result.loot_cluster_total_value,
+            "loot_cluster_pellet_count": strategy_result.loot_cluster_pellet_count,
+            "loot_cluster_target_x": (
+                strategy_result.loot_cluster_target.x
+                if strategy_result.loot_cluster_target
+                else None
+            ),
+            "loot_cluster_target_y": (
+                strategy_result.loot_cluster_target.y
+                if strategy_result.loot_cluster_target
+                else None
+            ),
         })
 
         passed = True
@@ -347,6 +373,73 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         expected_mode="seek_food",
         expected_gate_reason="none",
         expected_override=False,
+    )
+
+    cluster_snake = Snake(1, 0, 0, 0)
+    cluster_food = [
+        FoodItem(180, 48, 6.0),
+        FoodItem(196, 54, 5.5),
+        FoodItem(188, 70, 5.0),
+        FoodItem(45, 0, 2.0),
+    ]
+    yield ScenarioCase(
+        name="loot_cluster_safe_preferred",
+        my_snake=cluster_snake,
+        snakes=[cluster_snake],
+        foods=cluster_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["loot_cluster_pellet_count"] == 3
+            and result["loot_cluster_total_value"] > 15.0
+            and result["strategy"]["target_x"] > 180.0
+            and result["strategy"]["target_y"] > 45.0
+        ),
+    )
+
+    unsafe_cluster_snake = Snake(1, 0, 0, 0)
+    unsafe_cluster_food = [
+        FoodItem(150, -8, 7.0),
+        FoodItem(166, 6, 6.0),
+        FoodItem(178, -4, 5.0),
+        FoodItem(40, 80, 2.0),
+    ]
+    unsafe_cluster_enemy = Snake(2, 100, 0, 0)
+    unsafe_cluster_enemy.segments = [Vector2(100, 0)]
+    yield ScenarioCase(
+        name="loot_cluster_unsafe_rejected",
+        my_snake=unsafe_cluster_snake,
+        snakes=[unsafe_cluster_snake, unsafe_cluster_enemy],
+        foods=unsafe_cluster_food,
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["strategy"]["target_x"] == 100
+            and result["loot_cluster_score"] is None
+        ),
+    )
+
+    normal_food_snake = Snake(1, 0, 0, 0)
+    normal_food = [
+        FoodItem(30, 0, 2.0),
+        FoodItem(80, 30, 1.0),
+        FoodItem(140, -40, 1.0),
+    ]
+    yield ScenarioCase(
+        name="normal_food_without_cluster",
+        my_snake=normal_food_snake,
+        snakes=[normal_food_snake],
+        foods=normal_food,
+        expected_mode="seek_food",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["strategy"]["target_x"] == 30
+            and result["strategy"]["target_y"] == 0
+            and result["loot_cluster_score"] is None
+        ),
     )
 
     boost_safe_snake = Snake(1, 0, 0, 0)
