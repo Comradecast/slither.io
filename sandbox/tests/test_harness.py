@@ -14,6 +14,8 @@ EXPECTED_SCENARIOS = [
     "enemy_head_projection_non_crossing",
     "food_near_threat",
     "safe_food_path",
+    "telemetry_projected_collision_001",
+    "telemetry_enemy_intercept_001",
 ]
 
 

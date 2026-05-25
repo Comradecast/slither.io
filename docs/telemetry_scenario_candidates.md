@@ -37,5 +37,27 @@ Each JSONL record includes source line, candidate type, reason, mass/radius/posi
 - A `usable_for_harness=true` candidate still needs human review before becoming a tracked scenario.
 - The extractor does not load RL models, train models, or consult prior ML artifacts.
 
+## Promoted Candidates
+Two candidates were promoted into tracked fixtures at `sandbox/fixtures/promoted_telemetry_scenarios.json`.
+
+### `telemetry_projected_collision_001`
+- Source line: `31`
+- Candidate type: `projected_collision`
+- Expected gate behavior: override with `projected_collision`
+- Why selected: The requested heading intersects a normalized enemy body segment, giving a compact regression case for body collision gating.
+- Limitations: The fixture keeps only the controlled snake and the single enemy segment needed to reproduce the collision risk; it does not preserve the full telemetry frame.
+
+### `telemetry_enemy_intercept_001`
+- Source line: `111`
+- Candidate type: `enemy_intercept`
+- Expected gate behavior: override with `enemy_head_intercept`
+- Why selected: The requested heading is unsafe because a projected enemy head crosses the path, giving a compact regression case for heading-aware enemy projection.
+- Limitations: The fixture keeps only the enemy head that reproduces the intercept; unrelated snakes, food, and telemetry trails are omitted.
+
+### Reviewed But Not Promoted
+- Source line `1`: usable `projected_collision`, but it also reported enemy intercept risk. It was skipped in favor of line `31`, which isolates projected body collision more cleanly.
+- Source line `121`: usable `projected_collision`, but redundant with line `31`.
+- Source line `171`: usable `enemy_intercept`, but redundant with line `111`.
+
 ## Next Milestone Recommendation
-`v0.15.0-promote-telemetry-scenarios`: manually review a small set of generated candidates and promote only the best cases into deterministic `ScenarioCase` fixtures with explicit expected SafetyGate behavior.
+`v0.16.0-expand-telemetry-regression-set`: review additional generated candidates only after the first promoted fixtures stay stable in the harness.

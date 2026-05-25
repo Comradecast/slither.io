@@ -20,6 +20,11 @@ from sandbox.vector import Vector2
 
 DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
 DEFAULT_REPORT_NAME = "harness_results.jsonl"
+PROMOTED_TELEMETRY_SCENARIOS_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "promoted_telemetry_scenarios.json"
+)
 
 
 @dataclass
@@ -164,6 +169,65 @@ def _large_snake(snake_id: int, x: float, y: float, angle: float) -> Snake:
     return snake
 
 
+def _snake_from_fixture(data: dict) -> Snake:
+    position = data["position"]
+    snake = Snake(data["id"], position["x"], position["y"], data["heading"])
+    snake.target_angle = data.get("wanted_heading", data["heading"])
+    snake.mass = data["mass"]
+    snake.recompute_segments()
+    if "segments" in data:
+        snake.segments = [
+            Vector2(segment["x"], segment["y"])
+            for segment in data["segments"]
+        ]
+    return snake
+
+
+def _food_from_fixture(data: dict) -> FoodItem:
+    position = data["position"]
+    return FoodItem(position["x"], position["y"], data["value"])
+
+
+def _telemetry_validator(candidate_type: str) -> Callable[[dict], bool]:
+    if candidate_type == "projected_collision":
+        return lambda result: result["collision_risk"] > 0.5
+    if candidate_type == "enemy_intercept":
+        return lambda result: result["enemy_head_intercept_risk"] > 1.5
+    return lambda result: result["was_overridden"] is False
+
+
+def build_promoted_telemetry_scenarios(
+    fixture_path: str | Path = PROMOTED_TELEMETRY_SCENARIOS_PATH,
+) -> Iterable[ScenarioCase]:
+    path = Path(fixture_path)
+    if not path.exists():
+        return []
+
+    records = json.loads(path.read_text(encoding="utf-8"))
+    scenarios = []
+    for record in records:
+        my_snake = _snake_from_fixture(record["my_snake"])
+        enemies = [
+            _snake_from_fixture(enemy)
+            for enemy in record.get("snakes", [])
+        ]
+        foods = [
+            _food_from_fixture(food)
+            for food in record.get("foods", [])
+        ]
+        scenarios.append(ScenarioCase(
+            name=record["name"],
+            my_snake=my_snake,
+            snakes=[my_snake, *enemies],
+            foods=foods,
+            expected_gate_reason=record["expected_gate_reason"],
+            expected_override=record["expected_override"],
+            requested_heading=record["requested_heading"],
+            validator=_telemetry_validator(record["candidate_type"]),
+        ))
+    return scenarios
+
+
 def build_scenarios() -> Iterable[ScenarioCase]:
     my_large = _large_snake(1, 0, 0, 0)
     enemy_wall = Snake(2, 50, 0, 0)
@@ -274,6 +338,9 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         expected_gate_reason="none",
         expected_override=False,
     )
+
+    for scenario in build_promoted_telemetry_scenarios():
+        yield scenario
 
 
 def run_all_scenarios(

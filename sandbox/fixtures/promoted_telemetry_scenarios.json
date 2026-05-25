@@ -1,0 +1,66 @@
+[
+  {
+    "name": "telemetry_projected_collision_001",
+    "source_line": 31,
+    "candidate_type": "projected_collision",
+    "my_mass": 30.0,
+    "my_radius": 6.24,
+    "my_position": {"x": 224.00863517561154, "y": 712.2552936531604},
+    "my_heading": 5.946379458936393,
+    "requested_heading": -0.8975350866809695,
+    "expected_override": true,
+    "expected_gate_reason": "projected_collision",
+    "notes": "Promoted from a usable telemetry candidate where the requested heading intersects a large enemy body segment.",
+    "my_snake": {
+      "id": 65,
+      "position": {"x": 224.00863517561154, "y": 712.2552936531604},
+      "heading": 5.946379458936393,
+      "wanted_heading": 5.178719139901925,
+      "mass": 30.0
+    },
+    "snakes": [
+      {
+        "id": 45,
+        "position": {"x": 271.58647506684093, "y": 775.7771801599288},
+        "heading": 2.405281875404685,
+        "wanted_heading": 2.405281875404685,
+        "mass": 3180.0,
+        "segments": [
+          {"x": 331.8210272104427, "y": 576.999544591957}
+        ]
+      }
+    ],
+    "foods": []
+  },
+  {
+    "name": "telemetry_enemy_intercept_001",
+    "source_line": 111,
+    "candidate_type": "enemy_intercept",
+    "my_mass": 30.0,
+    "my_radius": 6.24,
+    "my_position": {"x": 207.31679595702957, "y": 683.8100438475257},
+    "my_heading": 4.074252972624263,
+    "requested_heading": -2.148898641377409,
+    "expected_override": true,
+    "expected_gate_reason": "enemy_head_intercept",
+    "notes": "Promoted from a usable telemetry candidate where projected enemy head motion crosses the requested heading.",
+    "my_snake": {
+      "id": 65,
+      "position": {"x": 207.31679595702957, "y": 683.8100438475257},
+      "heading": 4.074252972624263,
+      "wanted_heading": 4.074252972624263,
+      "mass": 30.0
+    },
+    "snakes": [
+      {
+        "id": 191,
+        "position": {"x": 104.03131080798396, "y": 595.5929311954637},
+        "heading": 0.1718058482431918,
+        "wanted_heading": 0.1718058482431918,
+        "mass": 105.0,
+        "segments": []
+      }
+    ],
+    "foods": []
+  }
+]
