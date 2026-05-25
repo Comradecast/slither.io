@@ -27,6 +27,10 @@ EXPECTED_SCENARIOS = [
     "anti_coil_escape_open_gap",
     "anti_coil_escape_rejects_closing_gap",
     "anti_coil_no_false_positive_open_space",
+    "circle_squeeze_counter_open_gap",
+    "circle_squeeze_counter_closing_gap",
+    "circle_squeeze_counter_no_false_positive_arc",
+    "circle_squeeze_counter_prioritizes_boundary_safety",
     "partial_guard_safe_offset",
     "partial_guard_rejects_unsafe_offset",
     "partial_guard_not_when_no_enemy_pressure",
@@ -89,6 +93,13 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "partial_guard_side" in data
         assert "partial_guard_reason" in data
         assert "partial_guard_score" in data
+        assert "circle_squeeze_counter_active" in data
+        assert "circle_squeeze_sector_count" in data
+        assert "circle_squeeze_largest_gap_deg" in data
+        assert "circle_squeeze_escape_heading" in data
+        assert "circle_squeeze_escape_gap_center_deg" in data
+        assert "circle_squeeze_closure_risk" in data
+        assert "circle_squeeze_reason" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):

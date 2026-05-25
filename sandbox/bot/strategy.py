@@ -45,6 +45,17 @@ class CompressionAnalysis:
 
 
 @dataclass(frozen=True)
+class CircleSqueezeAnalysis:
+    active: bool
+    sector_count: int
+    nearby_threat_count: int
+    largest_gap: float
+    largest_gap_center: float
+    closure_risk: float
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class EscapePlan:
     heading: float
     target: Vector2
@@ -90,6 +101,13 @@ class StrategyResult:
     partial_guard_side: str | None = None
     partial_guard_reason: str | None = None
     partial_guard_score: float | None = None
+    circle_squeeze_counter_active: bool = False
+    circle_squeeze_sector_count: int | None = None
+    circle_squeeze_largest_gap_deg: float | None = None
+    circle_squeeze_escape_heading: float | None = None
+    circle_squeeze_escape_gap_center_deg: float | None = None
+    circle_squeeze_closure_risk: float | None = None
+    circle_squeeze_reason: str | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -127,6 +145,15 @@ class Strategy:
     PARTIAL_GUARD_PROTECTIVE_BONUS = 450.0
     PARTIAL_GUARD_DIRECT_APPROACH_MARGIN = 75.0
     PARTIAL_GUARD_DISTANCE_PENALTY = 0.5
+    CIRCLE_SQUEEZE_DETECTION_RADIUS = 190.0
+    CIRCLE_SQUEEZE_SECTOR_COUNT = 16
+    CIRCLE_SQUEEZE_MIN_THREATS = 8
+    CIRCLE_SQUEEZE_MIN_SECTORS = 9
+    CIRCLE_SQUEEZE_MAX_LARGEST_GAP = math.radians(135.0)
+    CIRCLE_SQUEEZE_ESCAPE_DISTANCE = 210.0
+    CIRCLE_SQUEEZE_GAP_CENTER_BONUS = 350.0
+    CIRCLE_SQUEEZE_BOUNDARY_DISTANCE_WEIGHT = 0.06
+    CIRCLE_SQUEEZE_DENSITY_PENALTY = 175.0
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -391,6 +418,79 @@ class Strategy:
         )
 
     @classmethod
+    def analyze_circle_squeeze(cls, perception: PerceptionState) -> CircleSqueezeAnalysis:
+        nearby_threats = [
+            threat
+            for threat in perception.visible_threats
+            if threat.distance <= cls.CIRCLE_SQUEEZE_DETECTION_RADIUS
+        ]
+        sector_width = (2 * math.pi) / cls.CIRCLE_SQUEEZE_SECTOR_COUNT
+        occupied: set[int] = set()
+        for threat in nearby_threats:
+            angle = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            ) % (2 * math.pi)
+            occupied.add(int(angle / sector_width))
+
+        largest_gap_sectors, gap_start = cls._largest_empty_sector_run(occupied)
+        largest_gap = largest_gap_sectors * sector_width
+        gap_center = (
+            gap_start + (largest_gap_sectors / 2.0)
+        ) * sector_width
+        gap_center = cls._normalize_angle(gap_center)
+        sector_count = len(occupied)
+        nearby_count = len(nearby_threats)
+        sector_ratio = sector_count / cls.CIRCLE_SQUEEZE_MIN_SECTORS
+        threat_ratio = nearby_count / cls.CIRCLE_SQUEEZE_MIN_THREATS
+        gap_ratio = (
+            cls.CIRCLE_SQUEEZE_MAX_LARGEST_GAP / max(largest_gap, sector_width)
+        )
+        closure_risk = min(sector_ratio, threat_ratio, gap_ratio)
+        active = (
+            nearby_count >= cls.CIRCLE_SQUEEZE_MIN_THREATS
+            and sector_count >= cls.CIRCLE_SQUEEZE_MIN_SECTORS
+            and largest_gap <= cls.CIRCLE_SQUEEZE_MAX_LARGEST_GAP
+        )
+        return CircleSqueezeAnalysis(
+            active=active,
+            sector_count=sector_count,
+            nearby_threat_count=nearby_count,
+            largest_gap=largest_gap,
+            largest_gap_center=gap_center,
+            closure_risk=closure_risk,
+            reason="closing_loop_gap_detected" if active else None,
+        )
+
+    @classmethod
+    def _largest_empty_sector_run(cls, occupied: set[int]) -> tuple[int, int]:
+        total = cls.CIRCLE_SQUEEZE_SECTOR_COUNT
+        if not occupied:
+            return total, 0
+        if len(occupied) == total:
+            return 0, 0
+
+        empty = [index not in occupied for index in range(total)]
+        best_length = 0
+        best_start = 0
+        current_length = 0
+        current_start = 0
+        for offset in range(total * 2):
+            index = offset % total
+            if empty[index]:
+                if current_length == 0:
+                    current_start = offset
+                current_length += 1
+                if current_length > best_length:
+                    best_length = min(current_length, total)
+                    best_start = current_start % total
+            else:
+                current_length = 0
+            if current_length >= total:
+                break
+        return best_length, best_start
+
+    @classmethod
     def _heading_corridor_density(
         cls,
         heading: float,
@@ -466,6 +566,82 @@ class Strategy:
             return None
 
         plans.sort(key=lambda item: (item[0], item[1], item[2]))
+        return plans[0][3]
+
+    def select_circle_squeeze_escape(
+        self,
+        perception: PerceptionState,
+        analysis: CircleSqueezeAnalysis | None = None,
+    ) -> EscapePlan | None:
+        analysis = analysis or self.analyze_circle_squeeze(perception)
+        if not analysis.active:
+            return None
+
+        sector_width = (2 * math.pi) / self.CIRCLE_SQUEEZE_SECTOR_COUNT
+        candidate_headings = [
+            analysis.largest_gap_center,
+            analysis.largest_gap_center - sector_width,
+            analysis.largest_gap_center + sector_width,
+            analysis.largest_gap_center - sector_width * 2,
+            analysis.largest_gap_center + sector_width * 2,
+            *self.ANTI_COIL_HEADING_SAMPLES,
+        ]
+        unique_headings = sorted({
+            round(self._normalize_angle(heading), 10)
+            for heading in candidate_headings
+        })
+
+        min_turn_radius = perception.my_radius * 2.0 + (perception.my_mass / 100.0)
+        plans: list[tuple[float, float, float, EscapePlan]] = []
+        for heading in unique_headings:
+            ray_dx = math.cos(heading)
+            ray_dy = math.sin(heading)
+            eval_result = self._evaluate_heading(
+                heading,
+                ray_dx,
+                ray_dy,
+                perception,
+                min_turn_radius,
+            )
+            if (
+                eval_result.collision_risk > 0.5
+                or eval_result.open_space_score < 0.15
+                or eval_result.enemy_head_intercept_risk > 1.5
+            ):
+                continue
+
+            density = self._heading_corridor_density(heading, perception)
+            gap_delta = abs(self._normalize_angle(heading - analysis.largest_gap_center))
+            boundary_distance = eval_result.boundary_forward_distance or 0.0
+            open_space_score = eval_result.open_space_score / (1 + density)
+            score = (
+                open_space_score * 1000.0
+                + max(0.0, math.pi - gap_delta) * self.CIRCLE_SQUEEZE_GAP_CENTER_BONUS
+                + min(boundary_distance, self.ANTI_COIL_CORRIDOR_DISTANCE)
+                * self.CIRCLE_SQUEEZE_BOUNDARY_DISTANCE_WEIGHT
+                - density * self.CIRCLE_SQUEEZE_DENSITY_PENALTY
+            )
+            target = Vector2(
+                perception.my_head.x + ray_dx * self.CIRCLE_SQUEEZE_ESCAPE_DISTANCE,
+                perception.my_head.y + ray_dy * self.CIRCLE_SQUEEZE_ESCAPE_DISTANCE,
+            )
+            plans.append((
+                -score,
+                gap_delta,
+                abs(self._normalize_angle(heading - perception.my_angle)),
+                EscapePlan(
+                    heading=heading,
+                    target=target,
+                    open_space_score=open_space_score,
+                    corridor_density=density,
+                    eval_result=eval_result,
+                ),
+            ))
+
+        if not plans:
+            return None
+
+        plans.sort(key=lambda item: (item[0], item[1], item[2], item[3].heading))
         return plans[0][3]
 
     @classmethod
@@ -677,7 +853,29 @@ class Strategy:
         if perception.boundary_distance < perception.my_radius * 10:
             return StrategyResult(mode=StrategyMode.AVOID_BOUNDARY, target_pos=Vector2(0, 0), defensive_reason="Boundary proximity")
 
-        # 2. Anti-coil escape: choose a safe gap before compression becomes a closed cage.
+        # 2. Circle-squeeze counter: classify tight loops before the generic anti-coil escape.
+        circle_squeeze = self.analyze_circle_squeeze(perception)
+        circle_escape = self.select_circle_squeeze_escape(perception, circle_squeeze)
+        if circle_escape is not None:
+            return StrategyResult(
+                mode=StrategyMode.AVOID_THREAT,
+                target_pos=circle_escape.target,
+                defensive_reason="Circle squeeze counter",
+                circle_squeeze_counter_active=True,
+                circle_squeeze_sector_count=circle_squeeze.sector_count,
+                circle_squeeze_largest_gap_deg=math.degrees(circle_squeeze.largest_gap),
+                circle_squeeze_escape_heading=circle_escape.heading,
+                circle_squeeze_escape_gap_center_deg=math.degrees(circle_squeeze.largest_gap_center),
+                circle_squeeze_closure_risk=circle_squeeze.closure_risk,
+                circle_squeeze_reason=circle_squeeze.reason,
+                anti_coil_escape_active=True,
+                compression_risk=circle_squeeze.closure_risk,
+                enclosure_sector_count=circle_squeeze.sector_count,
+                best_escape_heading=circle_escape.heading,
+                escape_open_space_score=circle_escape.open_space_score,
+            )
+
+        # 3. Anti-coil escape: choose a safe gap before compression becomes a closed cage.
         compression = self.analyze_compression(perception)
         escape_plan = self.select_anti_coil_escape(perception, compression)
         if escape_plan is not None:
@@ -692,7 +890,7 @@ class Strategy:
                 anti_coil_escape_active=True,
             )
 
-        # 3. Threat avoidance (using highest scored threat)
+        # 4. Threat avoidance (using highest scored threat)
         if perception.highest_threat is not None:
             # target_pos is the threat we want to avoid
             reason = "Forward danger" if perception.highest_threat.in_forward_cone else "Nearby body segment"
@@ -704,7 +902,7 @@ class Strategy:
                 enclosure_sector_count=compression.sector_count,
             )
 
-        # 4. Seek food if safe
+        # 5. Seek food if safe
         if perception.visible_food:
             best_food = max(perception.visible_food, key=lambda food: self.score_food(food, perception))
             best_food_score = self.score_food(best_food, perception)
@@ -745,7 +943,7 @@ class Strategy:
                 food_score=best_food_score,
             )
             
-        # 5. Default: wander
+        # 6. Default: wander
         return StrategyResult(mode=StrategyMode.WANDER, target_pos=None)
 
     def score_food(self, food, perception: PerceptionState) -> float:

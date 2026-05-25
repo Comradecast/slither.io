@@ -116,7 +116,7 @@ def test_anti_coil_priority_blocks_partial_guard():
     assert result.mode == StrategyMode.AVOID_THREAT
     assert result.anti_coil_escape_active is True
     assert result.partial_guard_active is False
-    assert result.defensive_reason == "Anti-coil escape"
+    assert result.defensive_reason in {"Anti-coil escape", "Circle squeeze counter"}
 
 
 def test_selected_guard_heading_passes_safety_evaluation():

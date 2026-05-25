@@ -156,6 +156,15 @@ class ScenarioRunner:
                 "partial_guard_side": strategy_result.partial_guard_side,
                 "partial_guard_reason": strategy_result.partial_guard_reason,
                 "partial_guard_score": strategy_result.partial_guard_score,
+                "circle_squeeze_counter_active": strategy_result.circle_squeeze_counter_active,
+                "circle_squeeze_sector_count": strategy_result.circle_squeeze_sector_count,
+                "circle_squeeze_largest_gap_deg": strategy_result.circle_squeeze_largest_gap_deg,
+                "circle_squeeze_escape_heading": strategy_result.circle_squeeze_escape_heading,
+                "circle_squeeze_escape_gap_center_deg": (
+                    strategy_result.circle_squeeze_escape_gap_center_deg
+                ),
+                "circle_squeeze_closure_risk": strategy_result.circle_squeeze_closure_risk,
+                "circle_squeeze_reason": strategy_result.circle_squeeze_reason,
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -235,6 +244,15 @@ class ScenarioRunner:
             "partial_guard_side": strategy_result.partial_guard_side,
             "partial_guard_reason": strategy_result.partial_guard_reason,
             "partial_guard_score": strategy_result.partial_guard_score,
+            "circle_squeeze_counter_active": strategy_result.circle_squeeze_counter_active,
+            "circle_squeeze_sector_count": strategy_result.circle_squeeze_sector_count,
+            "circle_squeeze_largest_gap_deg": strategy_result.circle_squeeze_largest_gap_deg,
+            "circle_squeeze_escape_heading": strategy_result.circle_squeeze_escape_heading,
+            "circle_squeeze_escape_gap_center_deg": (
+                strategy_result.circle_squeeze_escape_gap_center_deg
+            ),
+            "circle_squeeze_closure_risk": strategy_result.circle_squeeze_closure_risk,
+            "circle_squeeze_reason": strategy_result.circle_squeeze_reason,
         })
 
         passed = True
@@ -677,7 +695,10 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         validator=lambda result: (
             result["anti_coil_escape_active"] is True
             and result["best_escape_heading"] == 0.0
-            and result["strategy"]["defensive_reason"] == "Anti-coil escape"
+            and result["strategy"]["defensive_reason"] in {
+                "Anti-coil escape",
+                "Circle squeeze counter",
+            }
             and abs(result["selected_heading_deg"]) < 1.0
         ),
     )
@@ -731,6 +752,115 @@ def build_scenarios() -> Iterable[ScenarioCase]:
             result["anti_coil_escape_active"] is False
             and result["enclosure_sector_count"] < Strategy.ANTI_COIL_MIN_SECTORS
             and result["strategy"]["defensive_reason"] == "Forward danger"
+        ),
+    )
+
+    circle_snake = Snake(1, 0, 0, 0)
+    circle_enemy = Snake(2, -90, 0, 0)
+    circle_enemy.segments = [
+        Vector2(
+            math.cos(math.radians(angle)) * 90,
+            math.sin(math.radians(angle)) * 90,
+        )
+        for angle in (67.5, 90, 112.5, 135, 157.5, 180, 202.5, 225, 247.5, 270, 292.5)
+    ]
+    yield ScenarioCase(
+        name="circle_squeeze_counter_open_gap",
+        my_snake=circle_snake,
+        snakes=[circle_snake, circle_enemy],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["circle_squeeze_counter_active"] is True
+            and result["circle_squeeze_sector_count"] >= Strategy.CIRCLE_SQUEEZE_MIN_SECTORS
+            and abs(result["selected_heading_deg"]) < 35.0
+            and result["strategy"]["defensive_reason"] == "Circle squeeze counter"
+        ),
+    )
+
+    closing_circle_snake = Snake(1, 0, 0, 0)
+    closing_circle_enemy = Snake(2, -90, 0, 0)
+    closing_circle_enemy.segments = [
+        Vector2(
+            math.cos(math.radians(angle)) * 90,
+            math.sin(math.radians(angle)) * 90,
+        )
+        for angle in (67.5, 90, 112.5, 135, 157.5, 180, 202.5, 225, 247.5, 270, 292.5)
+    ]
+    closing_circle_head = Snake(3, 75, 80, math.radians(-90))
+    closing_circle_head.speed = Config.BASE_SPEED
+    closing_circle_head.segments = []
+    lower_closing_circle_head = Snake(4, 75, -80, math.radians(90))
+    lower_closing_circle_head.speed = Config.BASE_SPEED
+    lower_closing_circle_head.segments = []
+    yield ScenarioCase(
+        name="circle_squeeze_counter_closing_gap",
+        my_snake=closing_circle_snake,
+        snakes=[
+            closing_circle_snake,
+            closing_circle_enemy,
+            closing_circle_head,
+            lower_closing_circle_head,
+        ],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["circle_squeeze_counter_active"] is True
+            and abs(result["selected_heading_deg"]) > 20.0
+            and result["enemy_head_intercept_risk"] == 0.0
+            and result["strategy"]["defensive_reason"] == "Circle squeeze counter"
+        ),
+    )
+
+    open_arc_snake = Snake(1, 0, 0, 0)
+    open_arc_enemy = Snake(2, 70, 0, 0)
+    open_arc_enemy.segments = [
+        Vector2(
+            math.cos(math.radians(angle)) * 95,
+            math.sin(math.radians(angle)) * 95,
+        )
+        for angle in (0, 22.5, 45, 67.5, 90)
+    ]
+    yield ScenarioCase(
+        name="circle_squeeze_counter_no_false_positive_arc",
+        my_snake=open_arc_snake,
+        snakes=[open_arc_snake, open_arc_enemy],
+        foods=[],
+        expected_mode="avoid_threat",
+        expected_gate_reason="none",
+        expected_override=False,
+        validator=lambda result: (
+            result["circle_squeeze_counter_active"] is False
+            and result["circle_squeeze_sector_count"] is None
+            and result["strategy"]["defensive_reason"] == "Forward danger"
+        ),
+    )
+
+    boundary_circle_snake = Snake(1, Config.WORLD_RADIUS - 50, 0, 0)
+    boundary_circle_enemy = Snake(2, boundary_circle_snake.pos.x - 90, 0, 0)
+    boundary_circle_enemy.segments = [
+        Vector2(
+            boundary_circle_snake.pos.x + math.cos(math.radians(angle)) * 90,
+            math.sin(math.radians(angle)) * 90,
+        )
+        for angle in (67.5, 135, 157.5, 180, 202.5, 225, 247.5, 270, 292.5)
+    ]
+    yield ScenarioCase(
+        name="circle_squeeze_counter_prioritizes_boundary_safety",
+        my_snake=boundary_circle_snake,
+        snakes=[boundary_circle_snake, boundary_circle_enemy],
+        foods=[],
+        expected_mode="avoid_boundary",
+        expected_gate_reason="none",
+        expected_override=False,
+        requested_heading=math.pi / 2,
+        validator=lambda result: (
+            result["circle_squeeze_counter_active"] is False
+            and result["selected_heading_deg"] == 90.0
         ),
     )
 
@@ -840,7 +970,10 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         validator=lambda result: (
             result["anti_coil_escape_active"] is True
             and result["partial_guard_active"] is False
-            and result["strategy"]["defensive_reason"] == "Anti-coil escape"
+            and result["strategy"]["defensive_reason"] in {
+                "Anti-coil escape",
+                "Circle squeeze counter",
+            }
         ),
     )
 

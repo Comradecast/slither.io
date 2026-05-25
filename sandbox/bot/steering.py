@@ -19,7 +19,7 @@ class Steering:
             return SteeringResult(heading=math.atan2(dy, dx))
             
         elif strategy_res.mode == StrategyMode.AVOID_THREAT and strategy_res.target_pos:
-            if strategy_res.defensive_reason == "Anti-coil escape":
+            if strategy_res.defensive_reason in {"Anti-coil escape", "Circle squeeze counter"}:
                 dx = strategy_res.target_pos.x - perception.my_head.x
                 dy = strategy_res.target_pos.y - perception.my_head.y
                 return SteeringResult(heading=math.atan2(dy, dx))
