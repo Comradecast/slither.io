@@ -100,6 +100,10 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "circle_squeeze_escape_gap_center_deg" in data
         assert "circle_squeeze_closure_risk" in data
         assert "circle_squeeze_reason" in data
+        assert "persistent_threat_count" in data
+        assert "reacquired_threat_count" in data
+        assert "recent_missing_threat_count" in data
+        assert "closing_threat_count" in data
 
 
 def test_runner_can_append_without_resetting_report(tmp_path):

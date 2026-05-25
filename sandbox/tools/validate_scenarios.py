@@ -165,6 +165,10 @@ class ScenarioRunner:
                 ),
                 "circle_squeeze_closure_risk": strategy_result.circle_squeeze_closure_risk,
                 "circle_squeeze_reason": strategy_result.circle_squeeze_reason,
+                "persistent_threat_count": strategy_result.persistent_threat_count,
+                "reacquired_threat_count": strategy_result.reacquired_threat_count,
+                "recent_missing_threat_count": strategy_result.recent_missing_threat_count,
+                "closing_threat_count": strategy_result.closing_threat_count,
             },
             "steering": {
                 "strategy_heading_deg": math.degrees(steering_result.heading),
@@ -253,6 +257,10 @@ class ScenarioRunner:
             ),
             "circle_squeeze_closure_risk": strategy_result.circle_squeeze_closure_risk,
             "circle_squeeze_reason": strategy_result.circle_squeeze_reason,
+            "persistent_threat_count": strategy_result.persistent_threat_count,
+            "reacquired_threat_count": strategy_result.reacquired_threat_count,
+            "recent_missing_threat_count": strategy_result.recent_missing_threat_count,
+            "closing_threat_count": strategy_result.closing_threat_count,
         })
 
         passed = True

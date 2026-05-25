@@ -108,6 +108,10 @@ class StrategyResult:
     circle_squeeze_escape_gap_center_deg: float | None = None
     circle_squeeze_closure_risk: float | None = None
     circle_squeeze_reason: str | None = None
+    persistent_threat_count: int | None = None
+    reacquired_threat_count: int | None = None
+    recent_missing_threat_count: int | None = None
+    closing_threat_count: int | None = None
 
 class Strategy:
     """Decides the high-level goal based on perception."""
@@ -154,6 +158,7 @@ class Strategy:
     CIRCLE_SQUEEZE_GAP_CENTER_BONUS = 350.0
     CIRCLE_SQUEEZE_BOUNDARY_DISTANCE_WEIGHT = 0.06
     CIRCLE_SQUEEZE_DENSITY_PENALTY = 175.0
+    THREAT_MEMORY_CLOSING_DENSITY_PENALTY = 120.0
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -508,6 +513,28 @@ class Strategy:
                 density += 1
         return density
 
+    @classmethod
+    def _heading_closing_threat_density(
+        cls,
+        heading: float,
+        perception: PerceptionState,
+    ) -> int:
+        density = 0
+        for threat in perception.visible_threats:
+            if threat.velocity is None or threat.distance > cls.ANTI_COIL_CORRIDOR_DISTANCE:
+                continue
+            to_head_x = perception.my_head.x - threat.pos.x
+            to_head_y = perception.my_head.y - threat.pos.y
+            if threat.velocity.x * to_head_x + threat.velocity.y * to_head_y <= 0.0:
+                continue
+            angle_to_threat = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            )
+            if abs(cls._normalize_angle(angle_to_threat - heading)) <= cls.ANTI_COIL_CORRIDOR_HALF_ANGLE:
+                density += 1
+        return density
+
     def select_anti_coil_escape(
         self,
         perception: PerceptionState,
@@ -611,6 +638,7 @@ class Strategy:
                 continue
 
             density = self._heading_corridor_density(heading, perception)
+            closing_density = self._heading_closing_threat_density(heading, perception)
             gap_delta = abs(self._normalize_angle(heading - analysis.largest_gap_center))
             boundary_distance = eval_result.boundary_forward_distance or 0.0
             open_space_score = eval_result.open_space_score / (1 + density)
@@ -620,6 +648,7 @@ class Strategy:
                 + min(boundary_distance, self.ANTI_COIL_CORRIDOR_DISTANCE)
                 * self.CIRCLE_SQUEEZE_BOUNDARY_DISTANCE_WEIGHT
                 - density * self.CIRCLE_SQUEEZE_DENSITY_PENALTY
+                - closing_density * self.THREAT_MEMORY_CLOSING_DENSITY_PENALTY
             )
             target = Vector2(
                 perception.my_head.x + ray_dx * self.CIRCLE_SQUEEZE_ESCAPE_DISTANCE,
@@ -785,6 +814,15 @@ class Strategy:
         plans.sort(key=lambda item: (item[0], item[1], item[2].target.x, item[2].target.y))
         return plans[0][2]
 
+    @staticmethod
+    def _threat_memory_fields(perception: PerceptionState) -> dict:
+        return {
+            "persistent_threat_count": perception.persistent_threat_count,
+            "reacquired_threat_count": perception.reacquired_threat_count,
+            "recent_missing_threat_count": perception.recent_missing_threat_count,
+            "closing_threat_count": perception.closing_threat_count,
+        }
+
     def _evaluate_heading(self, requested_angle: float, ray_dx: float, ray_dy: float, perception: PerceptionState, min_turn_radius: float) -> EvalResult:
         res = EvalResult()
         
@@ -849,9 +887,16 @@ class Strategy:
         return res
 
     def decide(self, perception: PerceptionState) -> StrategyResult:
+        memory_fields = self._threat_memory_fields(perception)
+
         # 1. Boundary avoidance is highest priority
         if perception.boundary_distance < perception.my_radius * 10:
-            return StrategyResult(mode=StrategyMode.AVOID_BOUNDARY, target_pos=Vector2(0, 0), defensive_reason="Boundary proximity")
+            return StrategyResult(
+                mode=StrategyMode.AVOID_BOUNDARY,
+                target_pos=Vector2(0, 0),
+                defensive_reason="Boundary proximity",
+                **memory_fields,
+            )
 
         # 2. Circle-squeeze counter: classify tight loops before the generic anti-coil escape.
         circle_squeeze = self.analyze_circle_squeeze(perception)
@@ -873,6 +918,7 @@ class Strategy:
                 enclosure_sector_count=circle_squeeze.sector_count,
                 best_escape_heading=circle_escape.heading,
                 escape_open_space_score=circle_escape.open_space_score,
+                **memory_fields,
             )
 
         # 3. Anti-coil escape: choose a safe gap before compression becomes a closed cage.
@@ -888,6 +934,7 @@ class Strategy:
                 best_escape_heading=escape_plan.heading,
                 escape_open_space_score=escape_plan.open_space_score,
                 anti_coil_escape_active=True,
+                **memory_fields,
             )
 
         # 4. Threat avoidance (using highest scored threat)
@@ -900,6 +947,7 @@ class Strategy:
                 defensive_reason=reason,
                 compression_risk=compression.risk,
                 enclosure_sector_count=compression.sector_count,
+                **memory_fields,
             )
 
         # 5. Seek food if safe
@@ -924,6 +972,7 @@ class Strategy:
                     partial_guard_side=partial_guard.side,
                     partial_guard_reason=partial_guard.reason,
                     partial_guard_score=partial_guard.score,
+                    **memory_fields,
                 )
             if best_approach is not None and best_approach.cluster.score > best_food_score:
                 return StrategyResult(
@@ -936,15 +985,17 @@ class Strategy:
                     loot_cluster_target=best_approach.cluster.center,
                     loot_cluster_target_kind=best_approach.target_kind,
                     loot_cluster_approach=best_approach.target,
+                    **memory_fields,
                 )
             return StrategyResult(
                 mode=StrategyMode.SEEK_FOOD,
                 target_pos=best_food.pos,
                 food_score=best_food_score,
+                **memory_fields,
             )
             
         # 6. Default: wander
-        return StrategyResult(mode=StrategyMode.WANDER, target_pos=None)
+        return StrategyResult(mode=StrategyMode.WANDER, target_pos=None, **memory_fields)
 
     def score_food(self, food, perception: PerceptionState) -> float:
         score = (food.value * self.FOOD_VALUE_WEIGHT) - (food.distance * self.FOOD_DISTANCE_PENALTY)
