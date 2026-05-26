@@ -72,6 +72,15 @@ def test_harness_writes_jsonl_report(tmp_path):
         assert "boundary_forward_distance" in data
         assert "enemy_head_intercept_time" in data
         assert "enemy_head_intercept_distance" in data
+        assert "collision_threat_distance" in data
+        assert "collision_threat_angle_deg" in data
+        assert "collision_corridor_density" in data
+        assert "collision_forward_cone" in data
+        assert "collision_lateral_offset" in data
+        assert "threat_receding" in data
+        assert "threat_persistent_frames" in data
+        assert "threat_confidence" in data
+        assert "enemy_intercept_heading_delta_deg" in data
         assert "my_radius" in data
         assert "my_mass" in data
         assert "loot_cluster_score" in data

@@ -14,6 +14,15 @@ class EvalResult:
     boundary_forward_distance: float | None = None
     enemy_head_intercept_time: float | None = None
     enemy_head_intercept_distance: float | None = None
+    collision_threat_distance: float | None = None
+    collision_threat_angle_deg: float | None = None
+    collision_corridor_density: int = 0
+    collision_forward_cone: bool = False
+    collision_lateral_offset: float | None = None
+    threat_receding: bool | None = None
+    threat_persistent_frames: int | None = None
+    threat_confidence: float | None = None
+    enemy_intercept_heading_delta_deg: float | None = None
 
 
 @dataclass
@@ -159,6 +168,20 @@ class Strategy:
     CIRCLE_SQUEEZE_BOUNDARY_DISTANCE_WEIGHT = 0.06
     CIRCLE_SQUEEZE_DENSITY_PENALTY = 175.0
     THREAT_MEMORY_CLOSING_DENSITY_PENALTY = 120.0
+    THREAT_CORRIDOR_HARD_CENTER_RATIO = 0.55
+    THREAT_CORRIDOR_CLOSE_DISTANCE_FACTOR = 1.25
+    THREAT_CORRIDOR_SOFT_RISK = 0.4
+    THREAT_CORRIDOR_PERSISTENCE_FRAMES = 2
+    THREAT_CORRIDOR_DENSITY_DISTANCE = 220.0
+    THREAT_CORRIDOR_DENSITY_HALF_ANGLE = math.pi / 8
+    THREAT_INTERCEPT_HARD_TIME_DELTA = 0.35
+    THREAT_INTERCEPT_SOFT_TIME_DELTA = 0.5
+    THREAT_INTERCEPT_COMMIT_HEADING_DELTA = math.radians(120.0)
+    IMMEDIATE_FORWARD_THREAT_DISTANCE = 180.0
+    IMMEDIATE_LATERAL_THREAT_DISTANCE = 80.0
+    DENSE_THREAT_FIELD_COUNT = 96
+    DENSE_CLOSING_THREAT_COUNT = 24
+    DENSE_CORRIDOR_THREAT_COUNT = 4
     
     def __init__(self, profile="default"):
         self.profile = profile
@@ -535,6 +558,71 @@ class Strategy:
                 density += 1
         return density
 
+    @classmethod
+    def _threat_receding_from_head(
+        cls,
+        threat,
+        perception: PerceptionState,
+    ) -> bool | None:
+        if threat.velocity is None:
+            return None
+        from_head_x = threat.pos.x - perception.my_head.x
+        from_head_y = threat.pos.y - perception.my_head.y
+        return threat.velocity.x * from_head_x + threat.velocity.y * from_head_y > 0.0
+
+    @classmethod
+    def _threat_corridor_density_for_heading(
+        cls,
+        heading: float,
+        perception: PerceptionState,
+    ) -> int:
+        density = 0
+        for threat in perception.visible_threats:
+            if threat.distance > cls.THREAT_CORRIDOR_DENSITY_DISTANCE:
+                continue
+            angle_to_threat = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            )
+            if abs(cls._normalize_angle(angle_to_threat - heading)) <= cls.THREAT_CORRIDOR_DENSITY_HALF_ANGLE:
+                density += 1
+        return density
+
+    @classmethod
+    def _threat_confidence(
+        cls,
+        center_ratio: float,
+        threat,
+        receding: bool | None,
+    ) -> float:
+        persistence = min(
+            1.0,
+            threat.persistent_frames / cls.THREAT_CORRIDOR_PERSISTENCE_FRAMES,
+        )
+        movement = 0.6 if receding is True else 1.0
+        return max(0.0, min(1.0, center_ratio * persistence * movement))
+
+    @classmethod
+    def _requires_immediate_threat_avoidance(
+        cls,
+        perception: PerceptionState,
+    ) -> bool:
+        threat = perception.highest_threat
+        if threat is None:
+            return False
+        if cls._has_heavy_threat_pressure(perception):
+            return True
+        if threat.in_forward_cone and threat.distance <= cls.IMMEDIATE_FORWARD_THREAT_DISTANCE:
+            return True
+        return threat.distance <= cls.IMMEDIATE_LATERAL_THREAT_DISTANCE
+
+    @classmethod
+    def _has_heavy_threat_pressure(cls, perception: PerceptionState) -> bool:
+        return (
+            len(perception.visible_threats) >= cls.DENSE_THREAT_FIELD_COUNT
+            or perception.closing_threat_count >= cls.DENSE_CLOSING_THREAT_COUNT
+        )
+
     def select_anti_coil_escape(
         self,
         perception: PerceptionState,
@@ -778,6 +866,7 @@ class Strategy:
                     eval_result.collision_risk > 0.5
                     or eval_result.open_space_score < 0.15
                     or eval_result.enemy_head_intercept_risk > 1.5
+                    or eval_result.enemy_head_intercept_time is not None
                 ):
                     continue
 
@@ -828,6 +917,11 @@ class Strategy:
         
         max_projection_distance = perception.my_speed * max(self.ENEMY_PROJECTION_SAMPLE_TIMES)
         max_dist = max(perception.my_radius * 10, min_turn_radius * 2.0, max_projection_distance)
+        res.collision_corridor_density = self._threat_corridor_density_for_heading(
+            requested_angle,
+            perception,
+        )
+        heavy_threat_pressure = self._has_heavy_threat_pressure(perception)
         
         # 1. Check body threats
         for threat in perception.visible_threats:
@@ -842,7 +936,42 @@ class Strategy:
                 envelope = perception.my_radius + threat.radius
                 
                 if perp_dist < envelope:
-                    res.collision_risk = 1.0
+                    center_ratio = 1.0 - (perp_dist / max(1.0, envelope))
+                    receding = self._threat_receding_from_head(threat, perception)
+                    confidence = self._threat_confidence(center_ratio, threat, receding)
+                    close_hit = t <= min_turn_radius * self.THREAT_CORRIDOR_CLOSE_DISTANCE_FACTOR
+                    center_hit = center_ratio >= self.THREAT_CORRIDOR_HARD_CENTER_RATIO
+                    persistent_or_closing = (
+                        threat.persistent_frames >= self.THREAT_CORRIDOR_PERSISTENCE_FRAMES
+                        or receding is False
+                    )
+                    dense_corridor = (
+                        heavy_threat_pressure
+                        or res.collision_corridor_density >= self.DENSE_CORRIDOR_THREAT_COUNT
+                    )
+                    hard_collision = (
+                        close_hit
+                        or center_hit
+                        or dense_corridor
+                        or (
+                            persistent_or_closing
+                            and confidence >= self.THREAT_CORRIDOR_HARD_CENTER_RATIO
+                        )
+                    )
+                    risk = 1.0 if hard_collision else self.THREAT_CORRIDOR_SOFT_RISK
+                    if risk > res.collision_risk:
+                        res.collision_risk = risk
+                        res.collision_threat_distance = t
+                        res.collision_threat_angle_deg = math.degrees(
+                            self._normalize_angle(math.atan2(ty, tx) - requested_angle)
+                        )
+                        res.collision_lateral_offset = perp_dist
+                        res.collision_forward_cone = abs(
+                            self._normalize_angle(math.atan2(ty, tx) - perception.my_angle)
+                        ) <= self.THREAT_CORRIDOR_DENSITY_HALF_ANGLE
+                        res.threat_receding = receding
+                        res.threat_persistent_frames = threat.persistent_frames
+                        res.threat_confidence = confidence
                     
         # 2. Check projected enemy head intercepts
         for enemy in perception.visible_snakes:
@@ -864,12 +993,35 @@ class Strategy:
                 if 0 < t < max_dist:
                     perp_dist = abs(-ex * ray_dy + ey * ray_dx)
                     my_time = t / max(1.0, perception.my_speed)
+                    time_delta = abs(my_time - enemy_time)
 
-                    if perp_dist < envelope and abs(my_time - enemy_time) < 0.5:
-                        res.enemy_head_intercept_risk = 2.0
+                    if perp_dist < envelope and time_delta < self.THREAT_INTERCEPT_SOFT_TIME_DELTA:
+                        heading_to_crossing = math.atan2(
+                            perception.my_head.y - projected_head.y,
+                            perception.my_head.x - projected_head.x,
+                        )
+                        heading_delta = abs(
+                            self._normalize_angle(heading_to_crossing - enemy_heading)
+                        )
+                        committed_to_lane = (
+                            heading_delta <= self.THREAT_INTERCEPT_COMMIT_HEADING_DELTA
+                        )
+                        hard_intercept = committed_to_lane and (
+                            time_delta <= self.THREAT_INTERCEPT_HARD_TIME_DELTA
+                            or heading_delta <= math.radians(60.0)
+                        )
+                        risk = 2.0 if hard_intercept else 0.0
+                        if (
+                            risk <= res.enemy_head_intercept_risk
+                            and res.enemy_head_intercept_distance is not None
+                        ):
+                            continue
+                        res.enemy_head_intercept_risk = risk
                         res.enemy_head_intercept_time = enemy_time
                         res.enemy_head_intercept_distance = t
-                        break
+                        res.enemy_intercept_heading_delta_deg = math.degrees(heading_delta)
+                        if hard_intercept:
+                            break
 
             if res.enemy_head_intercept_risk > 1.5:
                 break
@@ -938,7 +1090,7 @@ class Strategy:
             )
 
         # 4. Threat avoidance (using highest scored threat)
-        if perception.highest_threat is not None:
+        if self._requires_immediate_threat_avoidance(perception):
             # target_pos is the threat we want to avoid
             reason = "Forward danger" if perception.highest_threat.in_forward_cone else "Nearby body segment"
             return StrategyResult(
