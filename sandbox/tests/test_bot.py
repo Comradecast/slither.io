@@ -392,6 +392,27 @@ def test_controller_returns_action_no_boost():
     assert not action.boost # 7. Controller does not boost by default
 
 
+def test_controller_applies_safety_gate_to_live_action():
+    s = Snake(1, 0, 0, 0)
+    s.speed = Config.BASE_SPEED
+    food = FoodItem(100, 0, 5.0)
+    enemy = Snake(2, 75, 80, -math.pi / 2)
+    enemy.speed = Config.BASE_SPEED
+    enemy.segments = []
+
+    controller = BotController(s)
+    action = controller.update([s, enemy], [food])
+
+    assert action.target_angle != pytest.approx(0.0)
+    assert s.target_angle == pytest.approx(action.target_angle)
+    assert controller.last_decision is not None
+    assert controller.last_decision["requested_heading"] == pytest.approx(0.0)
+    assert controller.last_decision["final_heading"] == pytest.approx(action.target_angle)
+    assert controller.last_decision["safety_gate_overridden"] is True
+    assert controller.last_decision["safety_gate_reason"] == "enemy_head_intercept"
+    assert not action.boost
+
+
 def test_strategy_evaluate_heading_uses_projected_enemy_snake():
     s = Snake(1, 0, 0, 0)
     s.speed = Config.BASE_SPEED

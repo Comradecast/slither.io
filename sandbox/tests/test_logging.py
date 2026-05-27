@@ -31,6 +31,9 @@ def test_logger_writes_one_record():
             assert record["snake_id"] == 42
             assert record["strategy_mode"] == "SEEK_FOOD"
             assert record["position"]["x"] == 10.0
+            assert record["final_heading"] == 1.57
+            assert record["safety_gate_overridden"] == False
+            assert record["safety_gate_reason"] == "none"
             assert record["nearest_threat_distance"] == 50.0
             assert record["highest_threat_score"] == 150.0
             assert record["highest_threat_in_forward_cone"] == True

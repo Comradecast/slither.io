@@ -559,6 +559,28 @@ class Strategy:
         return density
 
     @classmethod
+    def _heading_receding_threat_density(
+        cls,
+        heading: float,
+        perception: PerceptionState,
+    ) -> int:
+        density = 0
+        for threat in perception.visible_threats:
+            if threat.velocity is None or threat.distance > cls.ANTI_COIL_CORRIDOR_DISTANCE:
+                continue
+            from_head_x = threat.pos.x - perception.my_head.x
+            from_head_y = threat.pos.y - perception.my_head.y
+            if threat.velocity.x * from_head_x + threat.velocity.y * from_head_y <= 0.0:
+                continue
+            angle_to_threat = math.atan2(
+                threat.pos.y - perception.my_head.y,
+                threat.pos.x - perception.my_head.x,
+            )
+            if abs(cls._normalize_angle(angle_to_threat - heading)) <= cls.ANTI_COIL_CORRIDOR_HALF_ANGLE:
+                density += 1
+        return density
+
+    @classmethod
     def _threat_receding_from_head(
         cls,
         threat,

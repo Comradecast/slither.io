@@ -62,6 +62,24 @@ def test_safety_gate_override_disables_boost():
     assert reason == "boundary_too_close"
 
 
+def test_safety_gate_overrides_near_boundary_when_lookahead_would_hit_wall():
+    snake = Snake(1, Config.WORLD_RADIUS - 100, 0, 0)
+    snake.mass = 5000
+    snake.recompute_segments()
+    state = _state(snake, vision_radius=100)
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(
+        state,
+        0.0,
+        True,
+    )
+
+    assert safe_angle != pytest.approx(0.0)
+    assert safe_boost is False
+    assert overridden is True
+    assert reason == "tactical_lookahead_collision"
+
+
 def test_boost_disabled_near_boundary_without_heading_override():
     snake = Snake(1, Config.WORLD_RADIUS - 100, 0, 0)
     snake.mass = 5000
@@ -74,10 +92,10 @@ def test_boost_disabled_near_boundary_without_heading_override():
         True,
     )
 
-    assert safe_angle == pytest.approx(0.0)
+    assert safe_angle != pytest.approx(0.0)
     assert safe_boost is False
-    assert overridden is False
-    assert reason == "boost_boundary_too_close"
+    assert overridden is True
+    assert reason == "tactical_lookahead_collision"
 
 
 def test_boost_disabled_for_projected_enemy_intercept():
@@ -127,6 +145,28 @@ def test_boost_safety_result_is_deterministic():
     assert first == second
     assert first.allowed is False
     assert first.reason == "boost_turn_too_sharp"
+
+
+def test_safety_gate_rejects_future_collision_on_turn_limited_path():
+    snake = Snake(1, 0, 0, 0)
+    snake.mass = 100
+    snake.speed = Config.BASE_SPEED
+    snake.recompute_segments()
+    enemy = Snake(2, 80, 8, 0)
+    enemy.mass = 100
+    enemy.segments = [enemy.pos.copy()]
+    state = _state(snake, [snake, enemy], vision_radius=200)
+
+    safe_angle, safe_boost, overridden, reason = SafetyGate().filter_action(
+        state,
+        0.0,
+        False,
+    )
+
+    assert overridden is True
+    assert reason == "tactical_lookahead_collision"
+    assert safe_boost is False
+    assert safe_angle != pytest.approx(0.0)
 
 
 def test_harness_records_include_boost_fields(tmp_path):

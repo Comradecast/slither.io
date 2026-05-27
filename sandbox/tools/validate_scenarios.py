@@ -634,15 +634,14 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         snakes=[boost_boundary_snake],
         foods=[],
         expected_mode="avoid_boundary",
-        expected_gate_reason="boost_boundary_too_close",
-        expected_override=False,
+        expected_gate_reason="tactical_lookahead_collision",
+        expected_override=True,
         requested_heading=0.0,
         requested_boost=True,
         expected_final_boost=False,
         validator=lambda result: (
-            result["boundary_forward_distance"]
-            > result["my_radius"] * 2.0 + (result["my_mass"] / 100.0)
-            and result["boost_reason"] == "boost_boundary_too_close"
+            result["boost_reason"] == "tactical_lookahead_collision"
+            and result["selected_heading_deg"] != 0.0
         ),
     )
 
@@ -872,12 +871,12 @@ def build_scenarios() -> Iterable[ScenarioCase]:
         snakes=[boundary_circle_snake, boundary_circle_enemy],
         foods=[],
         expected_mode="avoid_boundary",
-        expected_gate_reason="none",
-        expected_override=False,
+        expected_gate_reason="tactical_lookahead_collision",
+        expected_override=True,
         requested_heading=math.pi / 2,
         validator=lambda result: (
             result["circle_squeeze_counter_active"] is False
-            and result["selected_heading_deg"] == 90.0
+            and result["selected_heading_deg"] > 100.0
         ),
     )
 
